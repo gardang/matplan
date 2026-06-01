@@ -17,16 +17,13 @@ export async function PUT(request: NextRequest) {
   const supabase = createServerClient();
   const { mode } = await request.json();
 
-  const { data: existing } = await supabase
+  const { error } = await supabase
     .from("app_settings")
-    .select("key")
-    .eq("key", "recipe_mode")
-    .maybeSingle();
+    .upsert({ key: "recipe_mode", value: mode }, { onConflict: "key" });
 
-  if (existing) {
-    await supabase.from("app_settings").update({ value: mode, updated_at: new Date().toISOString() }).eq("key", "recipe_mode");
-  } else {
-    await supabase.from("app_settings").insert({ key: "recipe_mode", value: mode });
+  if (error) {
+    console.error("PUT /api/settings/recipe-mode:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   return NextResponse.json({ mode });
