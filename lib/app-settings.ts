@@ -15,3 +15,17 @@ export async function getActiveModel(): Promise<string> {
     return DEFAULT_MODEL;
   }
 }
+
+export async function getRecipeMode(): Promise<'external' | 'ai'> {
+  try {
+    const supabase = createServerClient();
+    const { data } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "recipe_mode")
+      .maybeSingle();
+    return (data?.value as 'external' | 'ai') ?? 'external';
+  } catch {
+    return 'external';
+  }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Plus, Trash2, Check, Bot, Pencil } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
 import type { FamilyMember, FamilyPreference } from "@/lib/types";
@@ -11,6 +11,8 @@ export default function SettingsPage() {
   const [prefs, setPrefs] = useState<FamilyPreference[]>([]);
   const [activeModel, setActiveModel] = useState(DEFAULT_MODEL);
   const [savingModel, setSavingModel] = useState(false);
+  const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
+  const [savingRecipeMode, setSavingRecipeMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const { showToast, ToastContainer } = useToast();
@@ -20,15 +22,34 @@ export default function SettingsPage() {
       fetch("/api/settings/members").then((r) => r.json()),
       fetch("/api/settings/preferences").then((r) => r.json()),
       fetch("/api/settings/model").then((r) => r.json()),
+      fetch("/api/settings/recipe-mode").then((r) => r.json()),
     ])
-      .then(([m, p, { model }]) => {
+      .then(([m, p, { model }, rm]) => {
         setMembers(m);
         setPrefs(p);
         if (model) setActiveModel(model);
+        if (rm?.mode) setRecipeMode(rm.mode);
       })
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleRecipeModeChange(mode: "external" | "ai") {
+    setSavingRecipeMode(true);
+    try {
+      await fetch("/api/settings/recipe-mode", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      setRecipeMode(mode);
+      showToast("Oppskriftsmodus lagret", "success");
+    } catch {
+      showToast("Kunne ikke lagre", "error");
+    } finally {
+      setSavingRecipeMode(false);
+    }
+  }
 
   async function handleModelChange(modelId: string) {
     setSavingModel(true);
@@ -165,6 +186,35 @@ export default function SettingsPage() {
           })}
         </div>
       </section>
+
+      {/* Recipe mode */}
+      <div className="rounded-xl bg-white dark:bg-gray-800 shadow-sm p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-emerald-600" />
+          <h2 className="font-semibold text-sm">Oppskriftsmodus</h2>
+        </div>
+        <div className="flex gap-2">
+          {(["external", "ai"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => handleRecipeModeChange(m)}
+              disabled={savingRecipeMode}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                recipeMode === m
+                  ? "bg-emerald-600 text-white"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+              }`}
+            >
+              {m === "external" ? "Ekte oppskrifter" : "AI-oppskrifter"}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400">
+          {recipeMode === "external"
+            ? "Henter ingredienser direkte fra matprat.no / godt.no. Trykk på et måltidskort for å åpne oppskriften."
+            : "AI lager en komplett oppskrift med fremgangsmåte. Trykk på et måltidskort for å se den."}
+        </p>
+      </div>
 
       {/* Family members */}
       <section className="space-y-3">

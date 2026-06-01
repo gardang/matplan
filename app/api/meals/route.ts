@@ -5,7 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
-import { matchUrlToRecipe, fallbackSearchUrl, toLocalDateString } from "@/lib/normalize";
+import { fallbackSearchUrl, toLocalDateString } from "@/lib/normalize";
 import { DAY_LABELS_LONG } from "@/lib/constants";
 import { getActiveModel } from "@/lib/app-settings";
 import Anthropic from "@anthropic-ai/sdk";
@@ -91,7 +91,7 @@ Returner et JSON-objekt med BÅDE "meals" og "items":
   "items": [{"name":"...","quantity":"...","category":"...","forDay":"YYYY-MM-DD"}]
 }
 
-Bruk web_search for å finne ekte oppskriftslenker til matprat.no eller godt.no.
+For recipeUrl: inkluder gjerne en URL fra matprat.no eller godt.no hvis du kjenner den fra treningen din, ellers la feltet være tomt.
 Svar KUN med JSON, ingen annen tekst.`;
 
     const [systemPrompt, model] = await Promise.all([
@@ -99,31 +99,16 @@ Svar KUN med JSON, ingen annen tekst.`;
       getActiveModel(),
     ]);
 
+    // Phase 1: fast generation without web search — meals + shopping items only
     const response = await client.messages.create({
       model,
       max_tokens: 8000,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
-      tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
     });
 
-    // Extract text and search URLs
     const textBlocks = response.content.filter((b) => b.type === "text");
     const text = textBlocks.map((b) => (b as { type: "text"; text: string }).text).join("");
-
-    const searchUrls: Array<{ url: string; title?: string }> = [];
-    for (const block of response.content) {
-      if (
-        block.type === "web_search_tool_result" &&
-        Array.isArray((block as { type: string; content: unknown[] }).content)
-      ) {
-        for (const r of (block as { type: string; content: Array<{ type: string; url?: string; title?: string }> }).content) {
-          if (r.type === "web_search_result" && r.url) {
-            searchUrls.push({ url: r.url, title: r.title });
-          }
-        }
-      }
-    }
 
     // Parse JSON
     let parsed: { meals?: Array<{ date: string; name: string; description?: string; source?: string; recipeUrl?: string }>; items?: Array<{ name: string; quantity?: string; category?: string; forDay?: string }> } | null = null;
@@ -164,10 +149,11 @@ Svar KUN med JSON, ingen annen tekst.`;
     // Insert meals — upsert on (plan_id, meal_date) so re-generating never fails on duplicates
     const insertedMeals = [];
     for (const m of parsed.meals) {
+      // Use Claude's training-knowledge URL if provided; Phase 2 will overwrite with a verified link
       const recipeUrl =
         m.recipeUrl && m.recipeUrl.startsWith("http")
           ? m.recipeUrl
-          : matchUrlToRecipe(m.name, searchUrls) ?? fallbackSearchUrl(m.name);
+          : fallbackSearchUrl(m.name);
 
       // Try upsert first; fall back to plain insert if no unique constraint exists yet
       let data = null;

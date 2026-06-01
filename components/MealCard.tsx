@@ -19,6 +19,7 @@ interface MealCardProps {
   onDelete: () => void;
   onStartSwap: () => void;
   onConfirmSwap: () => void;
+  onOpenRecipe: () => void;
 }
 
 export function MealCard({
@@ -32,6 +33,7 @@ export function MealCard({
   onDelete,
   onStartSwap,
   onConfirmSwap,
+  onOpenRecipe,
 }: MealCardProps) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -78,7 +80,7 @@ export function MealCard({
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={onOpenRecipe}>
             <div className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">
               {dayLabel} {dateLabel}
             </div>

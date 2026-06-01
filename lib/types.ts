@@ -8,6 +8,14 @@ export interface MealPlan {
   updated_at: string;
 }
 
+export interface AiRecipe {
+  portions: number;
+  time_minutes: number;
+  difficulty: string;
+  ingredients: Array<{ name: string; quantity: string }>;
+  steps: string[];
+}
+
 export interface Meal {
   id: string;
   plan_id: string;
@@ -17,6 +25,7 @@ export interface Meal {
   recipe_url: string | null;
   recipe_source: string | null;
   notes: string | null;
+  ai_recipe: AiRecipe | null;
   created_at: string;
 }
 

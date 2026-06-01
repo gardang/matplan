@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { toLocalDateString } from "@/lib/normalize";
 import { DAY_LABELS_LONG } from "@/lib/constants";
 import { MealCard } from "@/components/MealCard";
+import { RecipeModal } from "@/components/RecipeModal";
 import { useToast } from "@/components/Toast";
 import type { Meal, MealPlan, MealRating } from "@/lib/types";
 
@@ -33,6 +34,8 @@ export default function PlanPage() {
   const [generating, setGenerating] = useState(false);
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
   const [addingMeal, setAddingMeal] = useState<string | null>(null); // null = closed, string = pre-selected date
+  const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
+  const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
   const { showToast, ToastContainer } = useToast();
 
   // Commit date inputs → save to localStorage + trigger data load
@@ -53,15 +56,18 @@ export default function PlanPage() {
       const planData: MealPlan = await planRes.json();
       setPlan(planData);
 
-      const [mealsRes, ratingsRes] = await Promise.all([
+      const [mealsRes, ratingsRes, recipeModeRes] = await Promise.all([
         fetch(`/api/meals?plan_id=${planData.id}`),
         fetch("/api/ratings"),
+        fetch("/api/settings/recipe-mode"),
       ]);
 
       const mealsData: Meal[] = await mealsRes.json();
       const ratingsData: MealRating[] = await ratingsRes.json();
+      const { mode } = await recipeModeRes.json();
 
       setMeals(mealsData);
+      setRecipeMode(mode ?? "external");
       const ratingsMap: Record<string, MealRating> = {};
       for (const r of ratingsData) {
         ratingsMap[r.meal_name.toLowerCase()] = r;
@@ -116,7 +122,7 @@ export default function PlanPage() {
         throw new Error("Middager ble ikke lagret. Sjekk server-logger for detaljer.");
       }
 
-      // Set meals immediately from API response — don't wait for loadPlan round-trip
+      // Phase 1 done — show meals immediately
       if (Array.isArray(data.meals) && data.meals.length > 0) {
         setMeals((prev) => {
           const newIds = new Set((data.meals as Meal[]).map((m) => m.id));
@@ -125,6 +131,23 @@ export default function PlanPage() {
             ...(data.meals as Meal[]),
           ].sort((a, b) => a.meal_date.localeCompare(b.meal_date));
         });
+
+        // Phase 2: fetch verified recipe links in background (external mode only)
+        if (recipeMode === "external") {
+          fetch("/api/meals/fetch-links", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              meals: (data.meals as Meal[]).map((m) => ({
+                id: m.id,
+                meal_name: m.meal_name,
+                meal_date: m.meal_date.substring(0, 10),
+              })),
+              planId: plan.id,
+              extractIngredients: true,
+            }),
+          }).catch(() => {});
+        }
       }
 
       // Insert shopping items from generation
@@ -148,8 +171,8 @@ export default function PlanPage() {
         });
       }
 
+      showToast("Middagsplan generert! Henter oppskriftslenker…", "success");
       await loadPlan();
-      showToast("Middagsplan generert!", "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Noe gikk galt", "error");
     } finally {
@@ -314,6 +337,7 @@ export default function PlanPage() {
                       setSwapSourceId((prev) => (prev === meal.id ? null : meal.id))
                     }
                     onConfirmSwap={() => handleSwap(meal.id)}
+                    onOpenRecipe={() => setRecipeModalMeal(meal)}
                   />
                 );
               }
@@ -385,6 +409,14 @@ export default function PlanPage() {
             />
           )}
         </>
+      )}
+
+      {recipeModalMeal && (
+        <RecipeModal
+          meal={recipeModalMeal}
+          recipeMode={recipeMode}
+          onClose={() => setRecipeModalMeal(null)}
+        />
       )}
     </div>
   );
