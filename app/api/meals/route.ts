@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
   const supabase = createServerClient();
   try {
     const body = await request.json();
-    const { planId, dateFrom, dateTo, existingMeals, generate } = body;
+    const { planId, dateFrom, dateTo, existingMeals, generate, recipeMode } = body;
 
     // Manual create (no AI)
     if (!generate) {
@@ -86,12 +86,19 @@ export async function POST(request: NextRequest) {
 ${dayLines}
 
 Returner et JSON-objekt med BÅDE "meals" og "items":
-{
+${recipeMode === "ai"
+  ? `{
+  "meals": [{"date":"YYYY-MM-DD","name":"...","description":"...","source":"..."}],
+  "items": [{"name":"...","quantity":"...","category":"...","forDay":"YYYY-MM-DD"}]
+}
+
+Ikke inkluder recipeUrl — AI genererer oppskriften på forespørsel.`
+  : `{
   "meals": [{"date":"YYYY-MM-DD","name":"...","description":"...","source":"...","recipeUrl":"..."}],
   "items": [{"name":"...","quantity":"...","category":"...","forDay":"YYYY-MM-DD"}]
 }
 
-For recipeUrl: inkluder gjerne en URL fra matprat.no eller godt.no hvis du kjenner den fra treningen din, ellers la feltet være tomt.
+For recipeUrl: inkluder gjerne en URL fra matprat.no eller godt.no hvis du kjenner den fra treningen din, ellers la feltet være tomt.`}
 Svar KUN med JSON, ingen annen tekst.`;
 
     const [systemPrompt, model] = await Promise.all([
@@ -150,10 +157,9 @@ Svar KUN med JSON, ingen annen tekst.`;
     const insertedMeals = [];
     for (const m of parsed.meals) {
       // Use Claude's training-knowledge URL if provided; Phase 2 will overwrite with a verified link
-      const recipeUrl =
-        m.recipeUrl && m.recipeUrl.startsWith("http")
-          ? m.recipeUrl
-          : fallbackSearchUrl(m.name);
+      const recipeUrl = recipeMode === "ai"
+        ? null
+        : (m.recipeUrl && m.recipeUrl.startsWith("http") ? m.recipeUrl : fallbackSearchUrl(m.name));
 
       // Try upsert first; fall back to plain insert if no unique constraint exists yet
       let data = null;

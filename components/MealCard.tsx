@@ -92,7 +92,9 @@ export function MealCard({
                 {meal.description}
               </div>
             )}
-            <RecipeLink url={meal.recipe_url} mealName={meal.meal_name} className="mt-1" />
+            {meal.recipe_url && (
+              <RecipeLink url={meal.recipe_url} mealName={meal.meal_name} className="mt-1" />
+            )}
           </div>
 
           {/* Actions */}

@@ -36,7 +36,7 @@ export default function PlanPage() {
   const [addingMeal, setAddingMeal] = useState<string | null>(null); // null = closed, string = pre-selected date
   const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
   const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
-  const { showToast, ToastContainer } = useToast();
+  const { showToast, dismissToast, ToastContainer } = useToast();
 
   // Commit date inputs → save to localStorage + trigger data load
   function commitDates() {
@@ -84,19 +84,42 @@ export default function PlanPage() {
     loadPlan();
   }, [loadPlan]);
 
-  // Real-time meals sync
+  // Real-time meals sync — update individual records instead of full reload
+  // to avoid loading spinner on background updates (Phase 2 URLs, AI recipe writes)
   useEffect(() => {
     if (!plan) return;
     const channel = supabase
       .channel("meals-" + plan.id)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "meals", filter: `plan_id=eq.${plan.id}` },
-        () => { loadPlan(); }
+        { event: "UPDATE", schema: "public", table: "meals", filter: `plan_id=eq.${plan.id}` },
+        (payload) => {
+          const updated = payload.new as Meal;
+          setMeals((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "meals", filter: `plan_id=eq.${plan.id}` },
+        (payload) => {
+          const inserted = payload.new as Meal;
+          setMeals((prev) => {
+            if (prev.some((m) => m.id === inserted.id)) return prev;
+            return [...prev, inserted].sort((a, b) => a.meal_date.localeCompare(b.meal_date));
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "meals", filter: `plan_id=eq.${plan.id}` },
+        (payload) => {
+          const deleted = payload.old as { id: string };
+          setMeals((prev) => prev.filter((m) => m.id !== deleted.id));
+        }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [plan, loadPlan]);
+  }, [plan]);
 
   async function handleGenerate() {
     if (!plan) return;
@@ -112,6 +135,7 @@ export default function PlanPage() {
           dateTo: appliedTo,
           existingMeals: meals,
           generate: true,
+          recipeMode,
         }),
       });
       const data = await res.json();
@@ -172,12 +196,11 @@ export default function PlanPage() {
       }
 
       showToast("Middagsplan generert! Henter oppskriftslenker…", "success");
-      await loadPlan();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Noe gikk galt", "error");
     } finally {
       setGenerating(false);
-      void toastId;
+      dismissToast(toastId);
     }
   }
 

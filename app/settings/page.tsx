@@ -15,6 +15,7 @@ export default function SettingsPage() {
   const [savingRecipeMode, setSavingRecipeMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
+  const [editingPref, setEditingPref] = useState<FamilyPreference | null>(null);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
@@ -90,6 +91,19 @@ export default function SettingsPage() {
       const updated: FamilyMember = await res.json();
       setMembers((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
       setEditingMember(null);
+    }
+  }
+
+  async function handleEditPref(id: string, fields: Partial<FamilyPreference>) {
+    const res = await fetch("/api/settings/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    if (res.ok) {
+      const updated: FamilyPreference = await res.json();
+      setPrefs((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setEditingPref(null);
     }
   }
 
@@ -319,6 +333,15 @@ export default function SettingsPage() {
           />
         </div>
 
+        {editingPref && (
+          <EditPrefModal
+            pref={editingPref}
+            members={members}
+            onSave={(fields) => handleEditPref(editingPref.id, fields)}
+            onClose={() => setEditingPref(null)}
+          />
+        )}
+
         {prefs.length === 0 ? (
           <p className="text-sm text-gray-400">Ingen preferanser lagt til ennå.</p>
         ) : (
@@ -340,12 +363,21 @@ export default function SettingsPage() {
                   <div className="text-sm text-gray-900 dark:text-gray-100 mt-0.5">{p.rule}</div>
                   {p.details && <div className="text-xs text-gray-400">{p.details}</div>}
                 </div>
-                <button
-                  onClick={() => deletePref(p.id)}
-                  className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex gap-1 shrink-0">
+                  <button
+                    onClick={() => setEditingPref(p)}
+                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    title="Rediger"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => deletePref(p.id)}
+                    className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -498,6 +530,75 @@ function EditMemberModal({ member, onSave, onClose }: EditMemberModalProps) {
             onClick={onClose}
             className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
           >
+            Avbryt
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Edit preference modal ─────────────────────────────────────────────────────
+
+interface EditPrefModalProps {
+  pref: FamilyPreference;
+  members: FamilyMember[];
+  onSave: (fields: Partial<FamilyPreference>) => Promise<void>;
+  onClose: () => void;
+}
+
+function EditPrefModal({ pref, members, onSave, onClose }: EditPrefModalProps) {
+  const [who, setWho] = useState(pref.who);
+  const [category, setCategory] = useState(pref.category);
+  const [rule, setRule] = useState(pref.rule);
+  const [details, setDetails] = useState(pref.details ?? "");
+  const [saving, setSaving] = useState(false);
+
+  const whoOptions = ["Familie", ...members.filter((m) => m.active).map((m) => m.name)];
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!rule.trim()) return;
+    setSaving(true);
+    await onSave({ who, category, rule, details: details || null });
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
+        <h3 className="font-semibold">Rediger preferanse</h3>
+        <select value={who} onChange={(e) => setWho(e.target.value)} className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100">
+          {whoOptions.map((w) => <option key={w} value={w}>{w}</option>)}
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value as FamilyPreference["category"])} className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100">
+          <option value="dislikes">Liker ikke</option>
+          <option value="never_use">Aldri bruk</option>
+          <option value="prefers">Foretrekker</option>
+          <option value="allergy">Allergi</option>
+          <option value="max_per_week">Maks per uke</option>
+          <option value="min_per_week">Minst per uke</option>
+          <option value="default_choice">Standard valg</option>
+          <option value="cooking_rule">Matlagingsregel</option>
+        </select>
+        <input
+          required
+          value={rule}
+          onChange={(e) => setRule(e.target.value)}
+          placeholder="Regel"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+        <input
+          value={details}
+          onChange={(e) => setDetails(e.target.value)}
+          placeholder="Detaljer (valgfritt)"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60">
+            {saving ? "Lagrer…" : "Lagre"}
+          </button>
+          <button type="button" onClick={onClose} className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600">
             Avbryt
           </button>
         </div>
