@@ -52,11 +52,10 @@ export async function POST(request: NextRequest) {
     const client = new Anthropic();
     const [model, systemPrompt] = await Promise.all([getActiveModel(), buildSystemPrompt()]);
 
-    let generated = 0;
-    const errors: string[] = [];
-
-    for (const meal of meals) {
-      try {
+    // Run all recipe generations in parallel — each updates the DB independently
+    // so real-time subscriptions on the client see cards populate as they finish
+    const results = await Promise.allSettled(
+      meals.map(async (meal) => {
         const response = await client.messages.create({
           model,
           max_tokens: 3000,
@@ -74,11 +73,7 @@ export async function POST(request: NextRequest) {
         if (m) {
           try { recipe = JSON.parse(m[0]); } catch {}
         }
-
-        if (!recipe) {
-          errors.push(`${meal.meal_name}: ugyldig JSON fra AI`);
-          continue;
-        }
+        if (!recipe) throw new Error(`ugyldig JSON fra AI for ${meal.meal_name}`);
 
         // Store recipe — triggers real-time subscription on the client
         await supabase.from("meals").update({ ai_recipe: recipe }).eq("id", meal.id);
@@ -110,13 +105,15 @@ export async function POST(request: NextRequest) {
             }))
           );
         }
+      })
+    );
 
-        generated++;
-      } catch (err) {
-        console.error(`generate-all-recipes: failed for ${meal.meal_name}:`, err);
-        errors.push(meal.meal_name);
-      }
-    }
+    const generated = results.filter((r) => r.status === "fulfilled").length;
+    const errors = results
+      .map((r, i) => (r.status === "rejected" ? meals[i].meal_name : null))
+      .filter(Boolean) as string[];
+
+    if (errors.length) console.error("generate-all-recipes errors:", errors);
 
     return NextResponse.json({ generated, errors });
   } catch (err) {
