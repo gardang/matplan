@@ -156,8 +156,8 @@ export default function PlanPage() {
           ].sort((a, b) => a.meal_date.localeCompare(b.meal_date));
         });
 
-        // Phase 2: fetch verified recipe links in background (external mode only)
         if (recipeMode === "external") {
+          // Phase 2: fetch verified recipe links + scrape ingredients
           fetch("/api/meals/fetch-links", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -170,6 +170,13 @@ export default function PlanPage() {
               planId: plan.id,
               extractIngredients: true,
             }),
+          }).catch(() => {});
+        } else {
+          // AI mode: generate all recipes in background — updates cards one by one via real-time
+          fetch("/api/meals/generate-all-recipes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ planId: plan.id }),
           }).catch(() => {});
         }
       }
@@ -353,7 +360,7 @@ export default function PlanPage() {
                     isSwapSource={meal.id === swapSourceId}
                     isSwapTarget={!!swapSourceId && meal.id !== swapSourceId}
                     swapMode={!!swapSourceId}
-                    showRating={meal.meal_date.substring(0, 10) <= todayStr}
+                    showRating={true}
                     onEdit={(fields) => handleEditMeal(meal.id, fields)}
                     onDelete={() => handleDeleteMeal(meal.id)}
                     onStartSwap={() =>
