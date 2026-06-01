@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, Suspense } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Loader2, CalendarDays, Wand2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toLocalDateString } from "@/lib/normalize";
@@ -20,7 +20,6 @@ export default function PlanPage() {
 }
 
 function PlanPageInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const today = new Date();
@@ -54,7 +53,7 @@ function PlanPageInner() {
   function applyDates(from: string, to: string) {
     localStorage.setItem("planDateFrom", from);
     localStorage.setItem("planDateTo", to);
-    router.replace(`/plan?from=${from}&to=${to}`);
+    window.history.replaceState(null, "", `/plan?from=${from}&to=${to}`);
     setAppliedFrom(from);
     setAppliedTo(to);
   }

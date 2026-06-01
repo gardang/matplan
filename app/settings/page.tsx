@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
 import type { FamilyMember, FamilyPreference, MealPlan } from "@/lib/types";
@@ -161,7 +161,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <ToastContainer />
 
       <div className="flex items-center gap-2">
@@ -170,13 +170,7 @@ export default function SettingsPage() {
       </div>
 
       {/* AI model */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Bot className="w-4 h-4 text-gray-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-            AI-modell
-          </h2>
-        </div>
+      <CollapsibleSection icon={<Bot className="w-4 h-4" />} title="AI-modell">
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
           {AVAILABLE_MODELS.map((m) => {
             const isActive = activeModel === m.id;
@@ -186,76 +180,56 @@ export default function SettingsPage() {
                 onClick={() => !isActive && handleModelChange(m.id)}
                 disabled={savingModel}
                 className={`w-full flex items-center gap-4 p-4 text-left transition-colors disabled:opacity-60 ${
-                  isActive
-                    ? "bg-emerald-50 dark:bg-emerald-900/20"
-                    : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  isActive ? "bg-emerald-50 dark:bg-emerald-900/20" : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
                 }`}
               >
-                <div
-                  className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${
-                    isActive
-                      ? "border-emerald-600 bg-emerald-600"
-                      : "border-gray-300 dark:border-gray-600"
-                  }`}
-                >
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isActive ? "border-emerald-600 bg-emerald-600" : "border-gray-300 dark:border-gray-600"}`}>
                   {isActive && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {m.name}
-                    </span>
+                    <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{m.name}</span>
                     {m.id === DEFAULT_MODEL && (
-                      <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">
-                        Anbefalt
-                      </span>
+                      <span className="text-xs bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-full font-medium">Anbefalt</span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    {m.description}
-                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{m.description}</div>
                 </div>
               </button>
             );
           })}
         </div>
-      </section>
+      </CollapsibleSection>
 
       {/* Recipe mode */}
-      <div className="rounded-xl bg-white dark:bg-gray-800 shadow-sm p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-emerald-600" />
-          <h2 className="font-semibold text-sm">Oppskriftsmodus</h2>
+      <CollapsibleSection icon={<BookOpen className="w-4 h-4" />} title="Oppskriftsmodus">
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            {(["external", "ai"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => handleRecipeModeChange(m)}
+                disabled={savingRecipeMode}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  recipeMode === m
+                    ? "bg-emerald-600 text-white"
+                    : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
+                }`}
+              >
+                {m === "external" ? "Ekte oppskrifter" : "AI-oppskrifter"}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">
+            {recipeMode === "external"
+              ? "Henter ingredienser direkte fra matprat.no / godt.no. Trykk på et måltidskort for å åpne oppskriften."
+              : "AI lager en komplett oppskrift med fremgangsmåte. Trykk på et måltidskort for å se den."}
+          </p>
         </div>
-        <div className="flex gap-2">
-          {(["external", "ai"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => handleRecipeModeChange(m)}
-              disabled={savingRecipeMode}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                recipeMode === m
-                  ? "bg-emerald-600 text-white"
-                  : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-              }`}
-            >
-              {m === "external" ? "Ekte oppskrifter" : "AI-oppskrifter"}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-gray-400">
-          {recipeMode === "external"
-            ? "Henter ingredienser direkte fra matprat.no / godt.no. Trykk på et måltidskort for å åpne oppskriften."
-            : "AI lager en komplett oppskrift med fremgangsmåte. Trykk på et måltidskort for å se den."}
-        </p>
-      </div>
+      </CollapsibleSection>
 
       {/* Plans */}
-      <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="w-4 h-4 text-gray-400" />
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Planer</h2>
-        </div>
+      <CollapsibleSection icon={<CalendarDays className="w-4 h-4" />} title="Planer" badge={plans.length > 0 ? String(plans.length) : undefined}>
         {plans.length === 0 ? (
           <p className="text-sm text-gray-400">Ingen planer ennå.</p>
         ) : (
@@ -289,14 +263,13 @@ export default function SettingsPage() {
             })}
           </div>
         )}
-      </section>
+      </CollapsibleSection>
 
       {/* Family members */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-            Familiemedlemmer
-          </h2>
+      <CollapsibleSection
+        icon={<Settings className="w-4 h-4" />}
+        title="Familiemedlemmer"
+        action={
           <AddMemberButton
             onAdd={async (data) => {
               const res = await fetch("/api/settings/members", {
@@ -310,12 +283,11 @@ export default function SettingsPage() {
               }
             }}
           />
-        </div>
-
+        }
+      >
         {members.length === 0 ? (
           <p className="text-sm text-gray-400">Ingen familiemedlemmer lagt til ennå.</p>
         ) : (
-          <>
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
             {members.map((m) => (
               <div key={m.id} className="flex items-center gap-3 p-4">
@@ -342,42 +314,31 @@ export default function SettingsPage() {
                   >
                     {m.active ? "Aktiv" : "Inaktiv"}
                   </button>
-                  <button
-                    onClick={() => setEditingMember(m)}
-                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    title="Rediger"
-                  >
+                  <button onClick={() => setEditingMember(m)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center" title="Rediger">
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => deleteMember(m.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                  >
+                  <button onClick={() => deleteMember(m.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
             ))}
           </div>
-
-          {/* Edit member modal */}
-          {editingMember && (
-            <EditMemberModal
-              member={editingMember}
-              onSave={(fields) => handleEditMember(editingMember.id, fields)}
-              onClose={() => setEditingMember(null)}
-            />
-          )}
-          </>
         )}
-      </section>
+        {editingMember && (
+          <EditMemberModal
+            member={editingMember}
+            onSave={(fields) => handleEditMember(editingMember.id, fields)}
+            onClose={() => setEditingMember(null)}
+          />
+        )}
+      </CollapsibleSection>
 
       {/* Preferences */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">
-            Preferanser og regler
-          </h2>
+      <CollapsibleSection
+        icon={<Check className="w-4 h-4" />}
+        title="Preferanser og regler"
+        action={
           <AddPrefButton
             members={members}
             onAdd={async (data) => {
@@ -392,17 +353,8 @@ export default function SettingsPage() {
               }
             }}
           />
-        </div>
-
-        {editingPref && (
-          <EditPrefModal
-            pref={editingPref}
-            members={members}
-            onSave={(fields) => handleEditPref(editingPref.id, fields)}
-            onClose={() => setEditingPref(null)}
-          />
-        )}
-
+        }
+      >
         {prefs.length === 0 ? (
           <p className="text-sm text-gray-400">Ingen preferanser lagt til ennå.</p>
         ) : (
@@ -416,26 +368,17 @@ export default function SettingsPage() {
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">
-                      {PREF_LABELS[p.category] ?? p.category}
-                    </span>
+                    <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded-full">{PREF_LABELS[p.category] ?? p.category}</span>
                     <span className="text-xs text-gray-400">{p.who}</span>
                   </div>
                   <div className="text-sm text-gray-900 dark:text-gray-100 mt-0.5">{p.rule}</div>
                   {p.details && <div className="text-xs text-gray-400">{p.details}</div>}
                 </div>
                 <div className="flex gap-1 shrink-0">
-                  <button
-                    onClick={() => setEditingPref(p)}
-                    className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                    title="Rediger"
-                  >
+                  <button onClick={() => setEditingPref(p)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center" title="Rediger">
                     <Pencil className="w-4 h-4" />
                   </button>
-                  <button
-                    onClick={() => deletePref(p.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
-                  >
+                  <button onClick={() => deletePref(p.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -443,7 +386,55 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
-      </section>
+        {editingPref && (
+          <EditPrefModal
+            pref={editingPref}
+            members={members}
+            onSave={(fields) => handleEditPref(editingPref.id, fields)}
+            onClose={() => setEditingPref(null)}
+          />
+        )}
+      </CollapsibleSection>
+    </div>
+  );
+}
+
+// ── Collapsible section ───────────────────────────────────────────────────────
+
+interface CollapsibleSectionProps {
+  icon: React.ReactNode;
+  title: string;
+  badge?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+function CollapsibleSection({ icon, title, badge, action, children, defaultOpen = false }: CollapsibleSectionProps) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="rounded-xl bg-white dark:bg-gray-800 shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+      >
+        <span className="text-gray-400 shrink-0">{icon}</span>
+        <span className="flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{title}</span>
+        {badge && (
+          <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full">
+            {badge}
+          </span>
+        )}
+        <ChevronDown className={`w-4 h-4 text-gray-400 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-gray-100 dark:border-gray-700 pt-3">
+          {action && <div className="flex justify-end">{action}</div>}
+          {children}
+        </div>
+      )}
     </div>
   );
 }
