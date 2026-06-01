@@ -144,6 +144,32 @@ export async function buildSystemPrompt(
     }
   }
 
+  // ── Recent meals (avoid repetition) ──────────────────────────────────────
+  // Look back 5 weeks so we cover the last full month of planning
+  const lookbackDate = new Date(dateFrom ? dateFrom + "T12:00:00" : Date.now());
+  lookbackDate.setDate(lookbackDate.getDate() - 35);
+  const lookbackStr = toLocalDateString(lookbackDate);
+
+  const { data: recentMeals } = await supabase
+    .from("meals")
+    .select("meal_name, meal_date")
+    .gte("meal_date", lookbackStr)
+    .lt("meal_date", dateFrom ?? toLocalDateString(new Date()))
+    .order("meal_date", { ascending: false });
+
+  if (recentMeals && recentMeals.length > 0) {
+    // Deduplicate by name (case-insensitive), keep most recent occurrence (results are desc)
+    const seen = new Map<string, { name: string; date: string }>();
+    for (const m of recentMeals) {
+      const key = m.meal_name.toLowerCase();
+      if (!seen.has(key)) seen.set(key, { name: m.meal_name, date: m.meal_date.substring(0, 10) });
+    }
+    const lines = Array.from(seen.values()).map((m) => `- ${m.name} (${m.date})`);
+    sections.push(
+      `## Nylige middager — unngå gjentak\nDisse rettene er servert de siste 5 ukene. Ikke gjenta dem og unngå svært like varianter:\n${lines.join("\n")}`
+    );
+  }
+
   // ── Birthday detection ────────────────────────────────────────────────────
   if (dateFrom && dateTo && members && members.length > 0) {
     const from = new Date(dateFrom);
