@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { Loader2, CalendarDays, Wand2, Plus } from "lucide-react";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Loader2, CalendarDays, Wand2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { toLocalDateString } from "@/lib/normalize";
 import { DAY_LABELS_LONG } from "@/lib/constants";
@@ -11,19 +12,28 @@ import { useToast } from "@/components/Toast";
 import type { Meal, MealPlan, MealRating } from "@/lib/types";
 
 export default function PlanPage() {
+  return (
+    <Suspense fallback={<div className="space-y-3">{[...Array(5)].map((_, i) => <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded-xl h-24" />)}</div>}>
+      <PlanPageInner />
+    </Suspense>
+  );
+}
+
+function PlanPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const today = new Date();
   const defaultFrom = toLocalDateString(today);
   const defaultTo = toLocalDateString(new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000));
 
+  function resolveInitial(param: string, lsKey: string, fallback: string) {
+    return searchParams.get(param) ?? (typeof window !== "undefined" ? localStorage.getItem(lsKey) : null) ?? fallback;
+  }
+
   // Input state — updates freely as user types or navigates the calendar
-  const [dateFrom, setDateFrom] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("planDateFrom") ?? defaultFrom;
-    return defaultFrom;
-  });
-  const [dateTo, setDateTo] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("planDateTo") ?? defaultTo;
-    return defaultTo;
-  });
+  const [dateFrom, setDateFrom] = useState(() => resolveInitial("from", "planDateFrom", defaultFrom));
+  const [dateTo, setDateTo] = useState(() => resolveInitial("to", "planDateTo", defaultTo));
   // Applied state — triggers data load only when user commits (blur / Enter)
   const [appliedFrom, setAppliedFrom] = useState(dateFrom);
   const [appliedTo, setAppliedTo] = useState(dateTo);
@@ -32,42 +42,68 @@ export default function PlanPage() {
   const [ratings, setRatings] = useState<Record<string, MealRating>>({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [allPlans, setAllPlans] = useState<MealPlan[]>([]);
+  const [currentPlanIndex, setCurrentPlanIndex] = useState(-1);
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
-  const [addingMeal, setAddingMeal] = useState<string | null>(null); // null = closed, string = pre-selected date
+  const [addingMeal, setAddingMeal] = useState<string | null>(null);
   const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
   const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
   const { showToast, dismissToast, ToastContainer } = useToast();
 
-  // Commit date inputs → save to localStorage + trigger data load
-  function commitDates() {
-    const from = dateFrom.length === 10 ? dateFrom : appliedFrom;
-    const to = dateTo.length === 10 ? dateTo : appliedTo;
+  // Persist dates to localStorage + URL, then trigger load
+  function applyDates(from: string, to: string) {
     localStorage.setItem("planDateFrom", from);
     localStorage.setItem("planDateTo", to);
+    router.replace(`/plan?from=${from}&to=${to}`);
     setAppliedFrom(from);
     setAppliedTo(to);
   }
 
-  // Load or create plan + meals
+  // Commit date inputs → apply
+  function commitDates() {
+    const from = dateFrom.length === 10 ? dateFrom : appliedFrom;
+    const to = dateTo.length === 10 ? dateTo : appliedTo;
+    applyDates(from, to);
+  }
+
+  // Navigate to adjacent plan by index in the sorted list
+  function navigatePlan(direction: "prev" | "next") {
+    const target = direction === "prev" ? allPlans[currentPlanIndex - 1] : allPlans[currentPlanIndex + 1];
+    if (!target) return;
+    setDateFrom(target.date_from);
+    setDateTo(target.date_to);
+    applyDates(target.date_from, target.date_to);
+  }
+
+  // Load plan + meals — plan may be null if no plan exists for these dates yet
   const loadPlan = useCallback(async () => {
     setLoading(true);
     try {
-      const planRes = await fetch(`/api/plans?date_from=${appliedFrom}&date_to=${appliedTo}`);
-      const planData: MealPlan = await planRes.json();
-      setPlan(planData);
-
-      const [mealsRes, ratingsRes, recipeModeRes] = await Promise.all([
-        fetch(`/api/meals?plan_id=${planData.id}`),
+      const [planRes, ratingsRes, recipeModeRes, plansListRes] = await Promise.all([
+        fetch(`/api/plans?date_from=${appliedFrom}&date_to=${appliedTo}`),
         fetch("/api/ratings"),
         fetch("/api/settings/recipe-mode"),
+        fetch("/api/plans?list=true"),
       ]);
 
-      const mealsData: Meal[] = await mealsRes.json();
+      const planData: MealPlan | null = await planRes.json();
       const ratingsData: MealRating[] = await ratingsRes.json();
       const { mode } = await recipeModeRes.json();
+      const plansList: MealPlan[] = await plansListRes.json();
 
-      setMeals(mealsData);
+      setPlan(planData);
       setRecipeMode(mode ?? "external");
+      setAllPlans(plansList);
+      setCurrentPlanIndex(planData ? plansList.findIndex((p) => p.id === planData.id) : -1);
+
+      if (planData) {
+        const mealsRes = await fetch(`/api/meals?plan_id=${planData.id}`);
+        const mealsData: Meal[] = await mealsRes.json();
+        setMeals(mealsData);
+      } else {
+        setMeals([]);
+      }
+
       const ratingsMap: Record<string, MealRating> = {};
       for (const r of ratingsData) {
         ratingsMap[r.meal_name.toLowerCase()] = r;
@@ -122,15 +158,26 @@ export default function PlanPage() {
   }, [plan]);
 
   async function handleGenerate() {
-    if (!plan) return;
     setGenerating(true);
     const toastId = showToast("Genererer middagsplan…", "loading");
     try {
+      // Create plan if it doesn't exist yet for these dates
+      let activePlan = plan;
+      if (!activePlan) {
+        const planRes = await fetch("/api/plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date_from: appliedFrom, date_to: appliedTo }),
+        });
+        activePlan = await planRes.json();
+        setPlan(activePlan);
+      }
+
       const res = await fetch("/api/meals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          planId: plan.id,
+          planId: activePlan!.id,
           dateFrom: appliedFrom,
           dateTo: appliedTo,
           existingMeals: meals,
@@ -167,7 +214,7 @@ export default function PlanPage() {
                 meal_name: m.meal_name,
                 meal_date: m.meal_date.substring(0, 10),
               })),
-              planId: plan.id,
+              planId: activePlan!.id,
               extractIngredients: true,
             }),
           }).catch(() => {});
@@ -176,19 +223,19 @@ export default function PlanPage() {
           fetch("/api/meals/generate-all-recipes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ planId: plan.id }),
+            body: JSON.stringify({ planId: activePlan!.id }),
           }).catch(() => {});
         }
       }
 
       // Insert shopping items from generation
-      if (data.items && data.items.length > 0 && plan) {
+      if (data.items && data.items.length > 0) {
         await fetch("/api/shopping", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(
             data.items.map((item: { name: string; quantity?: string; category?: string; forDay?: string }) => ({
-              plan_id: plan.id,
+              plan_id: activePlan!.id,
               item_name: item.name,
               quantity: item.quantity ?? null,
               category: item.category ?? "Annet",
@@ -270,8 +317,6 @@ export default function PlanPage() {
     );
   }
 
-  const todayStr = toLocalDateString(today);
-
   return (
     <div className="space-y-4">
       <ToastContainer />
@@ -296,25 +341,45 @@ export default function PlanPage() {
         </button>
       </div>
 
-      {/* Date range picker */}
-      <div className="flex gap-2 items-center text-sm">
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          onBlur={commitDates}
-          onKeyDown={(e) => { if (e.key === "Enter") commitDates(); }}
-          className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        />
-        <span className="text-gray-400">→</span>
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          onBlur={commitDates}
-          onKeyDown={(e) => { if (e.key === "Enter") commitDates(); }}
-          className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        />
+      {/* Date range picker + prev/next navigation */}
+      <div className="flex gap-2 items-center">
+        <button
+          onClick={() => navigatePlan("prev")}
+          disabled={currentPlanIndex <= 0}
+          className="p-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          title="Forrige plan"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+
+        <div className="flex gap-2 items-center flex-1">
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            onBlur={commitDates}
+            onKeyDown={(e) => { if (e.key === "Enter") commitDates(); }}
+            className="flex-1 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <span className="text-gray-400 shrink-0">→</span>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            onBlur={commitDates}
+            onKeyDown={(e) => { if (e.key === "Enter") commitDates(); }}
+            className="flex-1 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+
+        <button
+          onClick={() => navigatePlan("next")}
+          disabled={currentPlanIndex < 0 || currentPlanIndex >= allPlans.length - 1}
+          className="p-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          title="Neste plan"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Swap mode banner */}
@@ -415,11 +480,22 @@ export default function PlanPage() {
             <AddMealModal
               defaultDate={addingMeal}
               onSave={async (mealDate, mealName, recipeUrl) => {
+                // Create plan if it doesn't exist yet
+                let activePlan = plan;
+                if (!activePlan) {
+                  const planRes = await fetch("/api/plans", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ date_from: appliedFrom, date_to: appliedTo }),
+                  });
+                  activePlan = await planRes.json();
+                  setPlan(activePlan);
+                }
                 const res = await fetch("/api/meals", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    planId: plan.id,
+                    planId: activePlan!.id,
                     meal_date: mealDate,
                     meal_name: mealName,
                     recipe_url: recipeUrl || null,

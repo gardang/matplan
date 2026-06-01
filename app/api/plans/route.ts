@@ -1,5 +1,10 @@
-// GET /api/plans — get or create the active plan for a date range
-// POST /api/plans — create a new plan
+// GET /api/plans
+//   ?date_from=&date_to=  → look up plan for range (null if not found — never creates)
+//   ?list=true            → all plans sorted by date_from ascending
+//   (no params)           → most recent plan
+//
+// POST /api/plans { date_from, date_to } → find or create plan (only call from generate / add meal)
+// DELETE /api/plans?id=  → delete plan and all its meals + shopping items
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 
@@ -8,10 +13,20 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const dateFrom = searchParams.get("date_from");
   const dateTo = searchParams.get("date_to");
+  const list = searchParams.get("list");
 
   try {
+    if (list === "true") {
+      const { data, error } = await supabase
+        .from("meal_plans")
+        .select("*")
+        .order("date_from", { ascending: true });
+      if (error) throw error;
+      return NextResponse.json(data ?? []);
+    }
+
     if (dateFrom && dateTo) {
-      // Find existing plan in this range
+      // Look up only — never create. Returns null if no plan exists for this range.
       const { data, error } = await supabase
         .from("meal_plans")
         .select("*")
@@ -20,24 +35,14 @@ export async function GET(request: NextRequest) {
         .maybeSingle();
 
       if (error) throw error;
-      if (data) return NextResponse.json(data);
-
-      // Create new plan
-      const { data: created, error: createError } = await supabase
-        .from("meal_plans")
-        .insert({ date_from: dateFrom, date_to: dateTo })
-        .select()
-        .single();
-
-      if (createError) throw createError;
-      return NextResponse.json(created);
+      return NextResponse.json(data ?? null);
     }
 
     // Return most recent plan
     const { data, error } = await supabase
       .from("meal_plans")
       .select("*")
-      .order("created_at", { ascending: false })
+      .order("date_from", { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -46,5 +51,56 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     console.error("GET /api/plans:", err);
     return NextResponse.json({ error: "Kunne ikke hente plan" }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const supabase = createServerClient();
+  try {
+    const { date_from, date_to } = await request.json();
+    if (!date_from || !date_to) {
+      return NextResponse.json({ error: "date_from and date_to required" }, { status: 400 });
+    }
+
+    // Find existing or create
+    const { data: existing } = await supabase
+      .from("meal_plans")
+      .select("*")
+      .eq("date_from", date_from)
+      .eq("date_to", date_to)
+      .maybeSingle();
+
+    if (existing) return NextResponse.json(existing);
+
+    const { data, error } = await supabase
+      .from("meal_plans")
+      .insert({ date_from, date_to })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("POST /api/plans:", err);
+    return NextResponse.json({ error: "Kunne ikke opprette plan" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const supabase = createServerClient();
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  try {
+    // Delete meals and shopping items first (cascade may not be set up)
+    await supabase.from("shopping_items").delete().eq("plan_id", id);
+    await supabase.from("meals").delete().eq("plan_id", id);
+    const { error } = await supabase.from("meal_plans").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/plans:", err);
+    return NextResponse.json({ error: "Kunne ikke slette plan" }, { status: 500 });
   }
 }

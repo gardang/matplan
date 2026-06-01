@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen } from "lucide-react";
+import Link from "next/link";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
-import type { FamilyMember, FamilyPreference } from "@/lib/types";
+import type { FamilyMember, FamilyPreference, MealPlan } from "@/lib/types";
 
 export default function SettingsPage() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -16,6 +17,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [editingPref, setEditingPref] = useState<FamilyPreference | null>(null);
+  const [plans, setPlans] = useState<(MealPlan & { meal_count: number })[]>([]);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
@@ -24,12 +26,19 @@ export default function SettingsPage() {
       fetch("/api/settings/preferences").then((r) => r.json()),
       fetch("/api/settings/model").then((r) => r.json()),
       fetch("/api/settings/recipe-mode").then((r) => r.json()),
+      fetch("/api/plans?list=true").then((r) => r.json()),
+      fetch("/api/meals/counts").then((r) => r.json()),
     ])
-      .then(([m, p, { model }, rm]) => {
+      .then(([m, p, { model }, rm, plansList, counts]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>]) => {
         setMembers(m);
         setPrefs(p);
         if (model) setActiveModel(model);
         if (rm?.mode) setRecipeMode(rm.mode);
+        setPlans(
+          [...plansList]
+            .reverse() // newest first for the settings list
+            .map((pl) => ({ ...pl, meal_count: counts[pl.id] ?? 0 }))
+        );
       })
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
@@ -67,6 +76,17 @@ export default function SettingsPage() {
       showToast("Kunne ikke lagre modell", "error");
     } finally {
       setSavingModel(false);
+    }
+  }
+
+  async function deletePlan(id: string, label: string) {
+    if (!confirm(`Slett plan "${label}" og alle måltider og handlevarer i den?`)) return;
+    const res = await fetch(`/api/plans?id=${id}`, { method: "DELETE" });
+    if (res.ok) {
+      setPlans((prev) => prev.filter((p) => p.id !== id));
+      showToast("Plan slettet", "success");
+    } else {
+      showToast("Kunne ikke slette plan", "error");
     }
   }
 
@@ -229,6 +249,47 @@ export default function SettingsPage() {
             : "AI lager en komplett oppskrift med fremgangsmåte. Trykk på et måltidskort for å se den."}
         </p>
       </div>
+
+      {/* Plans */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <CalendarDays className="w-4 h-4 text-gray-400" />
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Planer</h2>
+        </div>
+        {plans.length === 0 ? (
+          <p className="text-sm text-gray-400">Ingen planer ennå.</p>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+            {plans.map((pl) => {
+              const label = `${pl.date_from} → ${pl.date_to}`;
+              return (
+                <div key={pl.id} className="flex items-center gap-3 p-4">
+                  <Link
+                    href={`/plan?from=${pl.date_from}&to=${pl.date_to}`}
+                    className="flex-1 min-w-0 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                    onClick={() => {
+                      localStorage.setItem("planDateFrom", pl.date_from);
+                      localStorage.setItem("planDateTo", pl.date_to);
+                    }}
+                  >
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">
+                      {pl.meal_count === 0 ? "Ingen måltider" : `${pl.meal_count} måltid${pl.meal_count !== 1 ? "er" : ""}`}
+                    </div>
+                  </Link>
+                  <button
+                    onClick={() => deletePlan(pl.id, label)}
+                    className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    title="Slett plan"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Family members */}
       <section className="space-y-3">
