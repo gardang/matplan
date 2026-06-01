@@ -12,7 +12,7 @@ export interface AiRecipe {
   portions: number;
   time_minutes: number;
   difficulty: string;
-  ingredients: Array<{ name: string; quantity: string }>;
+  ingredients: Array<{ name: string; quantity: string; category?: string }>;
   steps: string[];
 }
 
