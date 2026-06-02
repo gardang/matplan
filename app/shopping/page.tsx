@@ -2,10 +2,10 @@
 
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { ShoppingCart, Plus, RefreshCw, CheckCheck, BookmarkPlus } from "lucide-react";
+import { ShoppingCart, Plus, RefreshCw, CheckCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { normalizeItemName, normalizeQuantity, mergeQuantities, sortKey } from "@/lib/normalize";
-import { CATEGORIES, STAPLES } from "@/lib/constants";
+import { CATEGORIES } from "@/lib/constants";
 import { ShopItem } from "@/components/ShopItem";
 import { useToast } from "@/components/Toast";
 import type { ShoppingItem, MergedItem, Meal } from "@/lib/types";
@@ -26,6 +26,7 @@ function ShoppingPageInner() {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
   const [backgroundGenerating, setBackgroundGenerating] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
@@ -179,17 +180,16 @@ function ShoppingPageInner() {
     setItems((prev) => prev.filter((i) => !item.ids.includes(i.id)));
   }
 
-  async function handleAddItem() {
-    const name = prompt("Legg til vare:");
-    if (!name || !planId) return;
+  async function handleAddItem(name: string, quantity: string, category: string) {
+    if (!planId) return;
     const res = await fetch("/api/shopping", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         plan_id: planId,
         item_name: name,
-        quantity: null,
-        category: "Annet",
+        quantity: quantity || null,
+        category,
         is_auto: false,
         is_edited: false,
         is_staple: false,
@@ -199,37 +199,6 @@ function ShoppingPageInner() {
     if (res.ok) {
       const newItem: ShoppingItem = await res.json();
       setItems((prev) => [...prev, newItem]);
-    }
-  }
-
-  async function handleAddStaples() {
-    if (!planId) return;
-    const normalizedExisting = new Set(items.map((i) => normalizeItemName(i.item_name).toLowerCase()));
-    const toAdd = STAPLES.filter(
-      (s) => !normalizedExisting.has(normalizeItemName(s.name).toLowerCase())
-    );
-    if (toAdd.length === 0) {
-      showToast("Alle basisvarer er allerede på listen", "success");
-      return;
-    }
-    const inserts = toAdd.map((s) => ({
-      plan_id: planId,
-      item_name: s.name,
-      quantity: s.quantity,
-      category: s.category,
-      is_auto: false,
-      is_edited: false,
-      is_staple: true,
-      checked: false,
-    }));
-    const res = await fetch("/api/shopping", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(inserts),
-    });
-    if (res.ok) {
-      showToast(`Lagt til ${toAdd.length} basisvarer`, "success");
-      await loadData();
     }
   }
 
@@ -288,23 +257,14 @@ function ShoppingPageInner() {
             <span className="text-sm text-gray-400">{checkedCount}/{totalItems}</span>
           )}
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleRegenerate}
-            disabled={meals.length === 0}
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            title={meals.length === 0 ? "Ingen middager planlagt" : "Regenerer fra middager"}
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          <button
-            onClick={handleAddStaples}
-            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            title="Legg til basisvarer"
-          >
-            <BookmarkPlus className="w-4 h-4" />
-          </button>
-        </div>
+        <button
+          onClick={handleRegenerate}
+          disabled={meals.length === 0}
+          className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          title={meals.length === 0 ? "Ingen middager planlagt" : "Regenerer fra middager"}
+        >
+          <RefreshCw className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Background generation banner */}
@@ -360,7 +320,7 @@ function ShoppingPageInner() {
       {/* Footer actions */}
       <div className="flex gap-3 pt-2">
         <button
-          onClick={handleAddItem}
+          onClick={() => setAddModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -376,6 +336,89 @@ function ShoppingPageInner() {
           </button>
         )}
       </div>
+
+      {addModalOpen && (
+        <AddItemModal
+          onAdd={async (name, quantity, category) => {
+            await handleAddItem(name, quantity, category);
+            setAddModalOpen(false);
+          }}
+          onClose={() => setAddModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Add item modal ────────────────────────────────────────────────────────────
+
+function AddItemModal({
+  onAdd,
+  onClose,
+}: {
+  onAdd: (name: string, quantity: string, category: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [category, setCategory] = useState("Annet");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await onAdd(name.trim(), quantity.trim(), category);
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4"
+      >
+        <h3 className="font-semibold text-gray-900 dark:text-gray-100">Legg til vare</h3>
+        <input
+          required
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Varenavn"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+        <input
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          placeholder="Mengde (valgfritt, f.eks. 2 stk)"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        >
+          {CATEGORIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {saving ? "Legger til…" : "Legg til"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
+            Avbryt
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

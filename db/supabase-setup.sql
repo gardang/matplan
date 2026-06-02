@@ -209,8 +209,24 @@ insert into meal_ratings (meal_name, rating, rated_by, notes, recipe_url, tags, 
   ('Kyllingfilet med bønnesalat','ok',    null,      null, 'https://www.matprat.no/oppskrifter/rask/kyllingfilet-med-bonnesalat/', array[]::text[], 1, '2026-05-28');
 
 
+-- ── Weekly shopping patterns (bootstrap) ─────────────────────
+-- These replace the former hardcoded STAPLES constant.
+-- The AI system prompt injects weekly patterns as "always include" items.
+-- times_bought=3 satisfies the ≥3 threshold used in buildSystemPrompt().
+insert into shopping_patterns (item_name, normalized_name, avg_quantity, times_bought, category, typical_frequency)
+values
+  ('Melk',           'melk',           '2 liter', 3, 'Meieri og egg',      'weekly'),
+  ('Egg',            'egg',            '12 stk',  3, 'Meieri og egg',      'weekly'),
+  ('Smør',           'smor',           '1 pk',    3, 'Meieri og egg',      'weekly'),
+  ('Brød',           'brod',           '1 stk',   3, 'Brød og bakevarer',  'weekly'),
+  ('Appelsinjuice',  'appelsinjuice',  '1 liter', 3, 'Drikke',             'weekly'),
+  ('Kaffe',          'kaffe',          '1 pk',    3, 'Drikke',             'weekly'),
+  ('Bananer',        'bananer',        '1 bunt',  3, 'Grønnsaker og frukt','weekly')
+on conflict (lower(normalized_name)) do nothing;
+
+
 -- ── Done ─────────────────────────────────────────────────────
--- Seeded: 6 family members, 12 preferences, 2 app settings, 11 meal ratings.
--- shopping_patterns: empty (accumulates automatically as the app is used).
+-- Seeded: 6 family members, 12 preferences, 2 app settings, 11 meal ratings,
+--         7 weekly shopping patterns.
 -- meal_plans / meals / shopping_items: not seeded (transient planning data).
 -- meals.ai_recipe (jsonb) stores AI-generated recipes when recipe_mode='ai'.

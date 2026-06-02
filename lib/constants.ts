@@ -39,17 +39,6 @@ export const CATEGORIES = [
 
 export type Category = (typeof CATEGORIES)[number];
 
-// Standard weekly staples
-export const STAPLES: Array<{ name: string; quantity: string; category: Category }> = [
-  { name: "Melk", quantity: "2 liter", category: "Meieri og egg" },
-  { name: "Egg", quantity: "12 stk", category: "Meieri og egg" },
-  { name: "Smør", quantity: "1 pk", category: "Meieri og egg" },
-  { name: "Brød", quantity: "1 stk", category: "Brød og bakevarer" },
-  { name: "Appelsinjuice", quantity: "1 liter", category: "Drikke" },
-  { name: "Kaffe", quantity: "1 pk", category: "Drikke" },
-  { name: "Bananer", quantity: "1 bunt", category: "Grønnsaker og frukt" },
-];
-
 // Recipe site fallback search URLs
 export const RECIPE_SITES: Record<string, string> = {
   "matprat.no": "https://www.matprat.no/sok/?q=",

@@ -135,12 +135,19 @@ export async function buildSystemPrompt(
     .gte("times_bought", 3);
 
   if (patterns && patterns.length > 0) {
-    const patternLines = patterns
-      .filter((p) => p.avg_quantity)
-      .map((p) => `- ${p.item_name}: ${p.avg_quantity}${p.typical_frequency ? ` (${p.typical_frequency})` : ""}`);
+    const weekly = patterns.filter((p) => p.typical_frequency === "weekly" && p.avg_quantity);
+    const other = patterns.filter((p) => p.typical_frequency !== "weekly" && p.avg_quantity);
 
-    if (patternLines.length) {
-      sections.push(`## Typiske handlekvantumet\n${patternLines.join("\n")}`);
+    if (weekly.length > 0) {
+      const lines = weekly.map((p) => `- ${p.item_name}: ${p.avg_quantity}`).join("\n");
+      sections.push(
+        `## Faste ukentlige varer — alltid med i handlelisten\nDisse varene kjøpes hver uke og skal ALLTID inkluderes i handlelisten, uansett hvilke middager som er planlagt:\n${lines}`
+      );
+    }
+
+    if (other.length > 0) {
+      const lines = other.map((p) => `- ${p.item_name}: ${p.avg_quantity}${p.typical_frequency ? ` (${p.typical_frequency})` : ""}`).join("\n");
+      sections.push(`## Typiske handlekvantumet\n${lines}`);
     }
   }
 
