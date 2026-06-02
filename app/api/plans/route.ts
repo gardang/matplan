@@ -11,11 +11,23 @@ import { createServerClient } from "@/lib/supabase-server";
 export async function GET(request: NextRequest) {
   const supabase = createServerClient();
   const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
   const dateFrom = searchParams.get("date_from");
   const dateTo = searchParams.get("date_to");
   const list = searchParams.get("list");
 
   try {
+    // Direct lookup by primary key — fastest, used for sharing
+    if (id) {
+      const { data, error } = await supabase
+        .from("meal_plans")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return NextResponse.json(data ?? null);
+    }
+
     if (list === "true") {
       const { data, error } = await supabase
         .from("meal_plans")

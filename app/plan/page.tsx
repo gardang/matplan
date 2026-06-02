@@ -26,21 +26,24 @@ function PlanPageInner() {
   const defaultFrom = toLocalDateString(today);
   const defaultTo = toLocalDateString(new Date(today.getTime() + 6 * 24 * 60 * 60 * 1000));
 
-  function resolveInitial(param: string, lsKey: string, fallback: string) {
-    return searchParams.get(param) ?? (typeof window !== "undefined" ? localStorage.getItem(lsKey) : null) ?? fallback;
-  }
+  // Plan ID drives data loading: URL ?id → localStorage → null (most recent)
+  const [planId, setPlanId] = useState<string | null>(() => {
+    const urlId = searchParams.get("id");
+    if (urlId) return urlId;
+    if (typeof window !== "undefined") return localStorage.getItem("activePlanId");
+    return null;
+  });
 
-  // Input state — updates freely as user types or navigates the calendar
-  const [dateFrom, setDateFrom] = useState(() => resolveInitial("from", "planDateFrom", defaultFrom));
-  const [dateTo, setDateTo] = useState(() => resolveInitial("to", "planDateTo", defaultTo));
-  // Applied state — triggers data load only when user commits (blur / Enter)
-  const [appliedFrom, setAppliedFrom] = useState(dateFrom);
-  const [appliedTo, setAppliedTo] = useState(dateTo);
+  // Date pickers: local UI state only — populated from the loaded plan
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState(defaultTo);
+
   const [plan, setPlan] = useState<MealPlan | null>(null);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [ratings, setRatings] = useState<Record<string, MealRating>>({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [backgroundGenerating, setBackgroundGenerating] = useState(false);
   const [allPlans, setAllPlans] = useState<MealPlan[]>([]);
   const [currentPlanIndex, setCurrentPlanIndex] = useState(-1);
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
@@ -49,37 +52,34 @@ function PlanPageInner() {
   const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
   const { showToast, dismissToast, ToastContainer } = useToast();
 
-  // Persist dates to localStorage + URL, then trigger load
-  function applyDates(from: string, to: string) {
-    localStorage.setItem("planDateFrom", from);
-    localStorage.setItem("planDateTo", to);
-    window.history.replaceState(null, "", `/plan?from=${from}&to=${to}`);
-    setAppliedFrom(from);
-    setAppliedTo(to);
+  // Background task tracking: two independent keys so concurrent tasks don't cancel each other
+  function anyBgTaskRunning() {
+    return !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
   }
 
-  // Commit date inputs → apply
-  function commitDates() {
-    const from = dateFrom.length === 10 ? dateFrom : appliedFrom;
-    const to = dateTo.length === 10 ? dateTo : appliedTo;
-    applyDates(from, to);
+  // Listen for any background task completing — re-check remaining tasks
+  useEffect(() => {
+    const handler = () => setBackgroundGenerating(anyBgTaskRunning());
+    window.addEventListener("generation-complete", handler);
+    return () => window.removeEventListener("generation-complete", handler);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync URL and localStorage after knowing the plan — does NOT trigger a reload
+  function syncContext(p: MealPlan, plansList?: MealPlan[]) {
+    localStorage.setItem("activePlanId", p.id);
+    window.history.replaceState(null, "", `/plan?id=${p.id}`);
+    if (plansList) {
+      setAllPlans(plansList);
+      setCurrentPlanIndex(plansList.findIndex((pl) => pl.id === p.id));
+    }
   }
 
-  // Navigate to adjacent plan by index in the sorted list
-  function navigatePlan(direction: "prev" | "next") {
-    const target = direction === "prev" ? allPlans[currentPlanIndex - 1] : allPlans[currentPlanIndex + 1];
-    if (!target) return;
-    setDateFrom(target.date_from);
-    setDateTo(target.date_to);
-    applyDates(target.date_from, target.date_to);
-  }
-
-  // Load plan + meals — plan may be null if no plan exists for these dates yet
+  // Load plan by ID (or most recent when planId is null)
   const loadPlan = useCallback(async () => {
     setLoading(true);
     try {
       const [planRes, ratingsRes, recipeModeRes, plansListRes] = await Promise.all([
-        fetch(`/api/plans?date_from=${appliedFrom}&date_to=${appliedTo}`),
+        fetch(planId ? `/api/plans?id=${planId}` : `/api/plans`),
         fetch("/api/ratings"),
         fetch("/api/settings/recipe-mode"),
         fetch("/api/plans?list=true"),
@@ -93,14 +93,26 @@ function PlanPageInner() {
       setPlan(planData);
       setRecipeMode(mode ?? "external");
       setAllPlans(plansList);
-      setCurrentPlanIndex(planData ? plansList.findIndex((p) => p.id === planData.id) : -1);
 
       if (planData) {
+        setDateFrom(planData.date_from);
+        setDateTo(planData.date_to);
+        setCurrentPlanIndex(plansList.findIndex((p) => p.id === planData.id));
+        localStorage.setItem("activePlanId", planData.id);
+        window.history.replaceState(null, "", `/plan?id=${planData.id}`);
+        setBackgroundGenerating(
+          localStorage.getItem("generatingPlanId") === planData.id ||
+          localStorage.getItem("regeneratingPlanId") === planData.id
+        );
+
         const mealsRes = await fetch(`/api/meals?plan_id=${planData.id}`);
         const mealsData: Meal[] = await mealsRes.json();
         setMeals(mealsData);
       } else {
+        setCurrentPlanIndex(-1);
         setMeals([]);
+        localStorage.removeItem("activePlanId");
+        window.history.replaceState(null, "", `/plan`);
       }
 
       const ratingsMap: Record<string, MealRating> = {};
@@ -113,14 +125,13 @@ function PlanPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [appliedFrom, appliedTo]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [planId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     loadPlan();
   }, [loadPlan]);
 
-  // Real-time meals sync — update individual records instead of full reload
-  // to avoid loading spinner on background updates (Phase 2 URLs, AI recipe writes)
+  // Real-time meals sync — granular updates to avoid loading spinner on background writes
   useEffect(() => {
     if (!plan) return;
     const channel = supabase
@@ -156,6 +167,31 @@ function PlanPageInner() {
     return () => { supabase.removeChannel(channel); };
   }, [plan]);
 
+  // Commit date inputs: look up existing plan for the selected range
+  async function commitDates() {
+    if (dateFrom.length !== 10 || dateTo.length !== 10) return;
+    const res = await fetch(`/api/plans?date_from=${dateFrom}&date_to=${dateTo}`);
+    const found: MealPlan | null = await res.json();
+    if (found) {
+      // Navigate to this plan — triggers full reload via planId change
+      setPlanId(found.id);
+    } else {
+      // No plan yet for these dates — clear view, keep dates for generate
+      setPlan(null);
+      setMeals([]);
+      setCurrentPlanIndex(-1);
+      localStorage.removeItem("activePlanId");
+      window.history.replaceState(null, "", `/plan`);
+    }
+  }
+
+  // Navigate to adjacent plan
+  function navigatePlan(direction: "prev" | "next") {
+    const target = direction === "prev" ? allPlans[currentPlanIndex - 1] : allPlans[currentPlanIndex + 1];
+    if (!target) return;
+    setPlanId(target.id);
+  }
+
   async function handleGenerate() {
     setGenerating(true);
     const toastId = showToast("Genererer middagsplan…", "loading");
@@ -166,10 +202,16 @@ function PlanPageInner() {
         const planRes = await fetch("/api/plans", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date_from: appliedFrom, date_to: appliedTo }),
+          body: JSON.stringify({ date_from: dateFrom, date_to: dateTo }),
         });
         activePlan = await planRes.json();
         setPlan(activePlan);
+        // Sync URL/localStorage and refresh plan list without triggering a full reload
+        if (activePlan) {
+          const plansListRes = await fetch("/api/plans?list=true");
+          const updatedList: MealPlan[] = await plansListRes.json();
+          syncContext(activePlan, updatedList);
+        }
       }
 
       const res = await fetch("/api/meals", {
@@ -177,8 +219,8 @@ function PlanPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           planId: activePlan!.id,
-          dateFrom: appliedFrom,
-          dateTo: appliedTo,
+          dateFrom,
+          dateTo,
           existingMeals: meals,
           generate: true,
           recipeMode,
@@ -187,12 +229,10 @@ function PlanPageInner() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      // Meals returned empty even though AI generated them — DB insertion failed
       if (Array.isArray(data.meals) && data.meals.length === 0) {
         throw new Error("Middager ble ikke lagret. Sjekk server-logger for detaljer.");
       }
 
-      // Phase 1 done — show meals immediately
       if (Array.isArray(data.meals) && data.meals.length > 0) {
         setMeals((prev) => {
           const newIds = new Set((data.meals as Meal[]).map((m) => m.id));
@@ -202,8 +242,15 @@ function PlanPageInner() {
           ].sort((a, b) => a.meal_date.localeCompare(b.meal_date));
         });
 
+        localStorage.setItem("generatingPlanId", activePlan!.id);
+        setBackgroundGenerating(true);
+
+        const finishGeneration = () => {
+          localStorage.removeItem("generatingPlanId");
+          window.dispatchEvent(new Event("generation-complete"));
+        };
+
         if (recipeMode === "external") {
-          // Phase 2: fetch verified recipe links + scrape ingredients
           fetch("/api/meals/fetch-links", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -216,18 +263,16 @@ function PlanPageInner() {
               planId: activePlan!.id,
               extractIngredients: true,
             }),
-          }).catch(() => {});
+          }).finally(finishGeneration);
         } else {
-          // AI mode: generate all recipes in background — updates cards one by one via real-time
           fetch("/api/meals/generate-all-recipes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ planId: activePlan!.id }),
-          }).catch(() => {});
+          }).finally(finishGeneration);
         }
       }
 
-      // Insert shopping items from generation
       if (data.items && data.items.length > 0) {
         await fetch("/api/shopping", {
           method: "POST",
@@ -257,14 +302,18 @@ function PlanPageInner() {
     }
   }
 
-  // Fire-and-forget: update shopping list in background after any meal change
   function regenerateShopping(updatedMeals: Meal[]) {
     if (!plan) return;
+    localStorage.setItem("regeneratingPlanId", plan.id);
+    setBackgroundGenerating(true);
     fetch("/api/shopping/regenerate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ planId: plan.id, meals: updatedMeals }),
-    }).catch(() => {});
+    }).finally(() => {
+      localStorage.removeItem("regeneratingPlanId");
+      window.dispatchEvent(new Event("generation-complete"));
+    });
   }
 
   async function handleEditMeal(mealId: string, fields: Partial<Meal>) {
@@ -381,6 +430,14 @@ function PlanPageInner() {
         </button>
       </div>
 
+      {/* Background generation banner */}
+      {backgroundGenerating && (
+        <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-2.5 text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          <span>Henter oppskrifter og oppdaterer handlelisten…</span>
+        </div>
+      )}
+
       {/* Swap mode banner */}
       {swapSourceId && (
         <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 px-4 py-2 text-sm text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
@@ -399,8 +456,6 @@ function PlanPageInner() {
       ) : (
         <div className="space-y-3">
           {(() => {
-            // Build slots from dateFrom up to the last meal's date — show placeholders for missing days
-            // Normalize to YYYY-MM-DD in case Supabase returns timestamps with time component
             const mealsByDate: Record<string, Meal> = {};
             for (const m of meals) mealsByDate[m.meal_date.substring(0, 10)] = m;
             const lastDate = meals[meals.length - 1].meal_date.substring(0, 10);
@@ -435,7 +490,6 @@ function PlanPageInner() {
                   />
                 );
               }
-              // Empty slot — show placeholder
               const d = new Date(ds + "T12:00:00");
               const dow = d.getDay();
               const dayLabel = DAY_LABELS_LONG[dow];
@@ -457,12 +511,11 @@ function PlanPageInner() {
         </div>
       )}
 
-      {/* Add manual */}
+      {/* Add manual meal */}
       {plan && (
         <>
           <button
             onClick={() => {
-              // Default: day after last meal
               if (meals.length === 0) { setAddingMeal(dateTo); return; }
               const last = meals[meals.length - 1].meal_date;
               const d = new Date(last + "T12:00:00");
@@ -479,16 +532,16 @@ function PlanPageInner() {
             <AddMealModal
               defaultDate={addingMeal}
               onSave={async (mealDate, mealName, recipeUrl) => {
-                // Create plan if it doesn't exist yet
                 let activePlan = plan;
                 if (!activePlan) {
                   const planRes = await fetch("/api/plans", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ date_from: appliedFrom, date_to: appliedTo }),
+                    body: JSON.stringify({ date_from: dateFrom, date_to: dateTo }),
                   });
                   activePlan = await planRes.json();
                   setPlan(activePlan);
+                  if (activePlan) syncContext(activePlan);
                 }
                 const res = await fetch("/api/meals", {
                   method: "POST",

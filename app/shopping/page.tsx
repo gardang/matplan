@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { ShoppingCart, Plus, RefreshCw, CheckCheck, BookmarkPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { normalizeItemName, normalizeQuantity, mergeQuantities, sortKey } from "@/lib/normalize";
@@ -10,25 +11,52 @@ import { useToast } from "@/components/Toast";
 import type { ShoppingItem, MergedItem, Meal } from "@/lib/types";
 
 export default function ShoppingPage() {
+  return (
+    <Suspense fallback={<div className="space-y-2">{[...Array(8)].map((_, i) => <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded-lg h-12" />)}</div>}>
+      <ShoppingPageInner />
+    </Suspense>
+  );
+}
+
+function ShoppingPageInner() {
+  const searchParams = useSearchParams();
+
   const [planId, setPlanId] = useState<string | null>(null);
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [backgroundGenerating, setBackgroundGenerating] = useState(false);
   const { showToast, ToastContainer } = useToast();
 
-  // Load current plan
+  useEffect(() => {
+    const handler = () => {
+      const stillRunning =
+        !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
+      setBackgroundGenerating(stillRunning);
+    };
+    window.addEventListener("generation-complete", handler);
+    return () => window.removeEventListener("generation-complete", handler);
+  }, []);
+
+  // Load plan: URL ?id → localStorage activePlanId → most recent
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Use the same date range as the plan page (stored in localStorage), or fall back to most recent plan
-      const storedFrom = typeof window !== "undefined" ? localStorage.getItem("planDateFrom") : null;
-      const storedTo = typeof window !== "undefined" ? localStorage.getItem("planDateTo") : null;
-      const planUrl = storedFrom && storedTo
-        ? `/api/plans?date_from=${storedFrom}&date_to=${storedTo}`
-        : `/api/plans`;
-      const planRes = await fetch(planUrl);
+      const urlId = searchParams.get("id");
+      const localId = typeof window !== "undefined" ? localStorage.getItem("activePlanId") : null;
+      const id = urlId ?? localId ?? null;
+
+      const planRes = await fetch(id ? `/api/plans?id=${id}` : `/api/plans`);
       const plan = await planRes.json();
+      if (!plan?.id) { setLoading(false); return; }
+
       setPlanId(plan.id);
+      localStorage.setItem("activePlanId", plan.id);
+      window.history.replaceState(null, "", `/shopping?id=${plan.id}`);
+      setBackgroundGenerating(
+        localStorage.getItem("generatingPlanId") === plan.id ||
+        localStorage.getItem("regeneratingPlanId") === plan.id
+      );
 
       const [itemsRes, mealsRes] = await Promise.all([
         fetch(`/api/shopping?plan_id=${plan.id}`),
@@ -241,15 +269,7 @@ export default function ShoppingPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {[...Array(8)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-200 dark:bg-gray-700 rounded-lg h-12" />
-        ))}
-      </div>
-    );
-  }
+  if (loading) return null; // Suspense fallback handles the skeleton
 
   const groups = buildMergedGroups();
   const totalItems = items.length;
@@ -286,6 +306,14 @@ export default function ShoppingPage() {
           </button>
         </div>
       </div>
+
+      {/* Background generation banner */}
+      {backgroundGenerating && (
+        <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-2.5 text-sm text-blue-700 dark:text-blue-300 flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+          <span>Handlelisten oppdateres automatisk mens oppskrifter hentes…</span>
+        </div>
+      )}
 
       {/* No meals warning */}
       {meals.length === 0 && (

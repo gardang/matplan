@@ -239,11 +239,10 @@ export default function SettingsPage() {
               return (
                 <div key={pl.id} className="flex items-center gap-3 p-4">
                   <Link
-                    href={`/plan?from=${pl.date_from}&to=${pl.date_to}`}
+                    href={`/plan?id=${pl.id}`}
                     className="flex-1 min-w-0 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                     onClick={() => {
-                      localStorage.setItem("planDateFrom", pl.date_from);
-                      localStorage.setItem("planDateTo", pl.date_to);
+                      localStorage.setItem("activePlanId", pl.id);
                     }}
                   >
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{label}</div>
