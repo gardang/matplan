@@ -1,5 +1,7 @@
 // GET /api/ratings — all ratings
 // POST /api/ratings — upsert rating by meal_name
+// PUT /api/ratings — update rating by id
+// DELETE /api/ratings?id= — delete rating by id
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 
@@ -65,5 +67,42 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("POST /api/ratings:", err);
     return NextResponse.json({ error: "Kunne ikke lagre vurdering" }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  const supabase = createServerClient();
+  try {
+    const { id, ...fields } = await request.json();
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    const { data, error } = await supabase
+      .from("meal_ratings")
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("PUT /api/ratings:", err);
+    return NextResponse.json({ error: "Kunne ikke oppdatere vurdering" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const supabase = createServerClient();
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  try {
+    const { error } = await supabase.from("meal_ratings").delete().eq("id", id);
+    if (error) throw error;
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("DELETE /api/ratings:", err);
+    return NextResponse.json({ error: "Kunne ikke slette vurdering" }, { status: 500 });
   }
 }

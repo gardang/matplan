@@ -4,7 +4,7 @@
 id UUID PK · date_from DATE · date_to DATE · created_at · updated_at
 
 ## meals
-id UUID PK · plan_id FK→meal_plans CASCADE · meal_date DATE · meal_name TEXT · description TEXT · recipe_url TEXT · recipe_source TEXT · notes TEXT · created_at
+id UUID PK · plan_id FK→meal_plans CASCADE (nullable) · meal_date DATE · meal_name TEXT · description TEXT · recipe_url TEXT · recipe_source TEXT · notes TEXT · ai_recipe JSONB (null unless recipe_mode=ai) · created_at
 
 ## shopping_items
 id UUID PK · plan_id FK→meal_plans CASCADE · item_name TEXT · quantity TEXT · category TEXT default 'Annet' · checked BOOL · is_auto BOOL default true · is_edited BOOL default false · is_staple BOOL default false · for_day DATE · notes TEXT · created_at

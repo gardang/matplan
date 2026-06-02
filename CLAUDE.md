@@ -19,6 +19,9 @@ skills/            ← Domain knowledge. Load the skill that matches the task.
   tailwind-ui/        Component styling, responsive, dark mode, animations
   shopping-logic/     List generation, merging, regeneration, learning
   meal-planning/      AI meal generation, ratings, swapping, birthday detection
+db/                ← Database artifacts
+  migrations/         One SQL file per schema change — NEVER skip this
+  supabase-setup.sql  Full setup script for new projects (regenerated from migrations)
 app/               ← Next.js pages and API routes
 components/        ← React components
 lib/               ← Shared utilities, types, clients, constants, system prompt
@@ -46,3 +49,16 @@ All family data (members, preferences, meal ratings, shopping patterns, staples)
 - Never use `toISOString()` for dates — use `getFullYear()`, `getMonth()`, `getDate()`
 - Claude API: always `max_tokens: 8000`, model `claude-sonnet-4-6`
 - Read `_context/conventions.md` for naming and code standards
+
+## Database Migration Rule
+
+**Every schema change MUST be accompanied by a migration file. No exceptions.**
+
+- Location: `db/migrations/`
+- Naming: `YYYYMMDD_NNN_short_description.sql` (e.g. `20260602_003_add_meals_rating_column.sql`)
+- NNN is a zero-padded sequence number — increment from the last file in the folder
+- Each file must be idempotent: use `if not exists`, `if exists`, `on conflict do nothing`
+- After creating a migration, also update `_context/schema.md` to reflect the change
+- Also update `db/supabase-setup.sql` to keep it in sync with the full schema
+
+This applies to: new tables, new columns, dropped columns, new indexes, constraint changes, seed data changes.

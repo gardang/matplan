@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
-import type { FamilyMember, FamilyPreference, MealPlan } from "@/lib/types";
+import type { FamilyMember, FamilyPreference, MealPlan, MealRating } from "@/lib/types";
 
 export default function SettingsPage() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -17,6 +17,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [editingPref, setEditingPref] = useState<FamilyPreference | null>(null);
+  const [editingRating, setEditingRating] = useState<MealRating | null>(null);
+  const [ratings, setRatings] = useState<MealRating[]>([]);
   const [plans, setPlans] = useState<(MealPlan & { meal_count: number })[]>([]);
   const { showToast, ToastContainer } = useToast();
 
@@ -28,17 +30,19 @@ export default function SettingsPage() {
       fetch("/api/settings/recipe-mode").then((r) => r.json()),
       fetch("/api/plans?list=true").then((r) => r.json()),
       fetch("/api/meals/counts").then((r) => r.json()),
+      fetch("/api/ratings").then((r) => r.json()),
     ])
-      .then(([m, p, { model }, rm, plansList, counts]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>]) => {
+      .then(([m, p, { model }, rm, plansList, counts, ratingsList]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>, MealRating[]]) => {
         setMembers(m);
         setPrefs(p);
         if (model) setActiveModel(model);
-        if (rm?.mode) setRecipeMode(rm.mode);
+        if (rm?.mode) setRecipeMode(rm.mode as "external" | "ai");
         setPlans(
           [...plansList]
             .reverse() // newest first for the settings list
             .map((pl) => ({ ...pl, meal_count: counts[pl.id] ?? 0 }))
         );
+        setRatings(ratingsList ?? []);
       })
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
@@ -137,6 +141,25 @@ export default function SettingsPage() {
       const updated: FamilyPreference = await res.json();
       setPrefs((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     }
+  }
+
+  async function handleEditRating(id: string, fields: Partial<MealRating>) {
+    const res = await fetch("/api/ratings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ...fields }),
+    });
+    if (res.ok) {
+      const updated: MealRating = await res.json();
+      setRatings((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setEditingRating(null);
+    }
+  }
+
+  async function deleteRating(id: string) {
+    if (!confirm("Slett vurdering?")) return;
+    const res = await fetch(`/api/ratings?id=${id}`, { method: "DELETE" });
+    if (res.ok) setRatings((prev) => prev.filter((r) => r.id !== id));
   }
 
   const PREF_LABELS: Record<string, string> = {
@@ -391,6 +414,63 @@ export default function SettingsPage() {
             members={members}
             onSave={(fields) => handleEditPref(editingPref.id, fields)}
             onClose={() => setEditingPref(null)}
+          />
+        )}
+      </CollapsibleSection>
+
+      {/* Ratings */}
+      <CollapsibleSection
+        icon={<Star className="w-4 h-4" />}
+        title="Vurderinger"
+        badge={ratings.length > 0 ? String(ratings.length) : undefined}
+      >
+        {ratings.length === 0 ? (
+          <p className="text-sm text-gray-400">Ingen vurderinger ennå.</p>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+            {(["loved", "ok", "disliked", "never_again"] as const).map((group) => {
+              const groupItems = ratings.filter((r) => r.rating === group);
+              if (groupItems.length === 0) return null;
+              return groupItems.map((r) => (
+                <div key={r.id} className="flex items-center gap-3 p-4">
+                  <span className="text-lg shrink-0" title={RATING_LABELS[r.rating]}>
+                    {RATING_EMOJI[r.rating]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{r.meal_name}</div>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RATING_PILL[r.rating]}`}>
+                        {RATING_LABELS[r.rating]}
+                      </span>
+                      {r.notes && <span className="text-xs text-gray-400 truncate max-w-[160px]">{r.notes}</span>}
+                      {r.last_made && <span className="text-xs text-gray-300 dark:text-gray-600">{r.last_made}</span>}
+                    </div>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <button
+                      onClick={() => setEditingRating(r)}
+                      className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      title="Rediger"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => deleteRating(r.id)}
+                      className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ));
+            })}
+          </div>
+        )}
+        {editingRating && (
+          <EditRatingModal
+            rating={editingRating}
+            onSave={(fields) => handleEditRating(editingRating.id, fields)}
+            onClose={() => setEditingRating(null)}
           />
         )}
       </CollapsibleSection>
@@ -650,6 +730,109 @@ function EditPrefModal({ pref, members, onSave, onClose }: EditPrefModalProps) {
             {saving ? "Lagrer…" : "Lagre"}
           </button>
           <button type="button" onClick={onClose} className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600">
+            Avbryt
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Rating display helpers ────────────────────────────────────────────────────
+
+const RATING_EMOJI: Record<string, string> = {
+  loved: "🟢",
+  ok: "🟡",
+  disliked: "🔴",
+  never_again: "⛔",
+};
+
+const RATING_LABELS: Record<string, string> = {
+  loved: "Elsker",
+  ok: "OK",
+  disliked: "Liker ikke",
+  never_again: "Aldri igjen",
+};
+
+const RATING_PILL: Record<string, string> = {
+  loved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+  ok: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300",
+  disliked: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  never_again: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+};
+
+// ── Edit rating modal ─────────────────────────────────────────────────────────
+
+interface EditRatingModalProps {
+  rating: MealRating;
+  onSave: (fields: Partial<MealRating>) => Promise<void>;
+  onClose: () => void;
+}
+
+function EditRatingModal({ rating, onSave, onClose }: EditRatingModalProps) {
+  const [ratingVal, setRatingVal] = useState<MealRating["rating"]>(rating.rating);
+  const [notes, setNotes] = useState(rating.notes ?? "");
+  const [recipeUrl, setRecipeUrl] = useState(rating.recipe_url ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    await onSave({ rating: ratingVal, notes: notes || null, recipe_url: recipeUrl || null });
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
+        <h3 className="font-semibold truncate">{rating.meal_name}</h3>
+
+        {/* Rating picker */}
+        <div className="grid grid-cols-2 gap-2">
+          {(["loved", "ok", "disliked", "never_again"] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRatingVal(r)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border-2 transition-colors ${
+                ratingVal === r
+                  ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300"
+                  : "border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-500"
+              }`}
+            >
+              <span>{RATING_EMOJI[r]}</span>
+              <span>{RATING_LABELS[r]}</span>
+            </button>
+          ))}
+        </div>
+
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notater (valgfritt)"
+          rows={2}
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100 resize-none"
+        />
+        <input
+          value={recipeUrl}
+          onChange={(e) => setRecipeUrl(e.target.value)}
+          placeholder="Oppskrift URL (valgfritt)"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {saving ? "Lagrer…" : "Lagre"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
             Avbryt
           </button>
         </div>
