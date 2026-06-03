@@ -98,6 +98,28 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// PUT /api/plans { id, date_to } → extend plan date range
+export async function PUT(request: NextRequest) {
+  const supabase = createServerClient();
+  try {
+    const { id, date_to } = await request.json();
+    if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+    const { data, error } = await supabase
+      .from("meal_plans")
+      .update({ date_to })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return NextResponse.json(data);
+  } catch (err) {
+    console.error("PUT /api/plans:", err);
+    return NextResponse.json({ error: "Kunne ikke oppdatere plan" }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   const supabase = createServerClient();
   const { searchParams } = new URL(request.url);

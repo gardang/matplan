@@ -64,14 +64,32 @@ export async function POST(request: NextRequest) {
       .map((b) => (b as { type: "text"; text: string }).text)
       .join("");
 
+    // Strip markdown code fences if present
+    const clean = text.replace(/```(?:json)?\s*/gi, "").replace(/```\s*/g, "").trim();
+
     let parsed: { items?: Array<{ name: string; quantity?: string; category?: string; forDay?: string }> } | null = null;
-    try {
-      const m = text.match(/\{"items"\s*:\s*\[[\s\S]*?\]\s*\}/);
-      if (m) parsed = JSON.parse(m[0]);
-      else parsed = JSON.parse(text.slice(text.indexOf("{")));
-    } catch {}
+    const patterns = [
+      /\{"items"\s*:\s*\[[\s\S]*\]\s*\}/,   // greedy — works as long as no stray { before the real block
+      /\{[\s\S]*"items"[\s\S]*\}/,
+    ];
+    for (const p of patterns) {
+      const m = clean.match(p);
+      if (m) {
+        try {
+          const candidate = JSON.parse(m[0]);
+          if (candidate?.items) { parsed = candidate; break; }
+        } catch { /* try next */ }
+      }
+    }
+    if (!parsed?.items) {
+      const first = clean.indexOf("{");
+      if (first !== -1) {
+        try { parsed = JSON.parse(clean.slice(first)); } catch {}
+      }
+    }
 
     if (!parsed?.items) {
+      console.error("POST /api/shopping/regenerate — could not parse AI response:", clean.slice(0, 500));
       return NextResponse.json({ error: "AI svarte ikke med gyldig JSON" }, { status: 500 });
     }
 

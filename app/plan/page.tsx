@@ -583,6 +583,19 @@ function PlanPageInner() {
                   setPlan(activePlan);
                   if (activePlan) syncContext(activePlan);
                 }
+
+                // Extend plan range if the new meal falls after date_to
+                if (activePlan && mealDate > activePlan.date_to) {
+                  const updatedPlan: MealPlan = await fetch("/api/plans", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: activePlan.id, date_to: mealDate }),
+                  }).then((r) => r.json());
+                  activePlan = updatedPlan;
+                  setPlan(updatedPlan);
+                  setDateTo(mealDate);
+                }
+
                 const res = await fetch("/api/meals", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -595,12 +608,12 @@ function PlanPageInner() {
                 });
                 if (res.ok) {
                   const newMeal: Meal = await res.json();
-                  const updatedMeals = [...meals, newMeal].sort((a, b) =>
-                    a.meal_date.localeCompare(b.meal_date)
+                  setMeals((prev) =>
+                    [...prev, newMeal].sort((a, b) => a.meal_date.localeCompare(b.meal_date))
                   );
-                  setMeals(updatedMeals);
                   setAddingMeal(null);
-                  regenerateShopping(updatedMeals);
+                  // No shopping regeneration for manual meals — ingredients aren't known.
+                  // Items will be added when the user generates a recipe for this meal.
                 }
               }}
               onClose={() => setAddingMeal(null)}
