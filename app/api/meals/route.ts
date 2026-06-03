@@ -68,21 +68,42 @@ export async function POST(request: NextRequest) {
       plannedByDate[m.meal_date] = m.meal_name;
     }
 
-    const dayLines = days
-      .map((d, i) => {
-        const ds = toLocalDateString(d);
-        const label = `${DAY_LABELS_LONG[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
-        const planned = plannedByDate[ds];
-        return planned
-          ? `${i + 1}. ${ds} (${label}) → ALLEREDE PLANLAGT: ${planned}`
-          : `${i + 1}. ${ds} (${label}) → TRENGER MIDDAG`;
-      })
-      .join("\n");
+    const allDaysPlanned =
+      days.length > 0 && days.every((d) => !!plannedByDate[toLocalDateString(d)]);
 
-    const neededCount = days.filter((d) => !plannedByDate[toLocalDateString(d)]).length;
+    let dayLines: string;
+    let neededCount: number;
+    let avoidNote = "";
+
+    if (allDaysPlanned) {
+      // Full regeneration: all days need new meals — just avoid repeating the current ones
+      dayLines = days
+        .map((d, i) => {
+          const ds = toLocalDateString(d);
+          const label = `${DAY_LABELS_LONG[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+          return `${i + 1}. ${ds} (${label}) → TRENGER MIDDAG`;
+        })
+        .join("\n");
+      neededCount = days.length;
+      const currentNames = Object.values(plannedByDate).join(", ");
+      avoidNote = `\nDisse middagene er allerede planlagt og MÅ IKKE gjenbrukes: ${currentNames}. Foreslå helt andre middager.\n`;
+    } else {
+      // Fill gaps: keep days that already have a meal, generate only for empty slots
+      dayLines = days
+        .map((d, i) => {
+          const ds = toLocalDateString(d);
+          const label = `${DAY_LABELS_LONG[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+          const planned = plannedByDate[ds];
+          return planned
+            ? `${i + 1}. ${ds} (${label}) → ALLEREDE PLANLAGT: ${planned}`
+            : `${i + 1}. ${ds} (${label}) → TRENGER MIDDAG`;
+        })
+        .join("\n");
+      neededCount = days.filter((d) => !plannedByDate[toLocalDateString(d)]).length;
+    }
 
     const userMessage = `Du skal planlegge middager for NØYAKTIG ${neededCount} dager (ikke 7 — ${neededCount}!).
-
+${avoidNote}
 ${dayLines}
 
 Returner et JSON-objekt med BÅDE "meals" og "items":
