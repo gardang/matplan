@@ -225,8 +225,26 @@ values
 on conflict (lower(normalized_name)) do nothing;
 
 
+-- ── Functions ────────────────────────────────────────────────
+
+-- Atomically remap shopping_items.for_day when meals are drag-and-dropped.
+-- Single-statement UPDATE so dates that rotate (A→B, B→A) don't collide.
+create or replace function reorder_shopping_for_day(
+  p_plan_id uuid,
+  p_old_dates text[],
+  p_new_dates text[]
+) returns void
+language sql as $$
+  update shopping_items
+  set    for_day = p_new_dates[array_position(p_old_dates, for_day::text)]::date
+  where  plan_id       = p_plan_id
+    and  for_day::text = any(p_old_dates)
+    and  for_day       is not null;
+$$;
+
 -- ── Done ─────────────────────────────────────────────────────
 -- Seeded: 6 family members, 12 preferences, 2 app settings, 11 meal ratings,
 --         7 weekly shopping patterns.
 -- meal_plans / meals / shopping_items: not seeded (transient planning data).
 -- meals.ai_recipe (jsonb) stores AI-generated recipes when recipe_mode='ai'.
+-- Functions: reorder_shopping_for_day — atomic for_day remap on meal reorder.

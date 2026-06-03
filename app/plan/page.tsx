@@ -8,6 +8,21 @@ import { toLocalDateString } from "@/lib/normalize";
 import { DAY_LABELS_LONG } from "@/lib/constants";
 import { MealCard } from "@/components/MealCard";
 import { RecipeModal } from "@/components/RecipeModal";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { useToast } from "@/components/Toast";
 import type { Meal, MealPlan, MealRating } from "@/lib/types";
 
@@ -54,11 +69,15 @@ function PlanPageInner() {
   );
   const [allPlans, setAllPlans] = useState<MealPlan[]>([]);
   const [currentPlanIndex, setCurrentPlanIndex] = useState(-1);
-  const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
   const [addingMeal, setAddingMeal] = useState<string | null>(null);
   const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
   const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
   const { showToast, dismissToast, ToastContainer } = useToast();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   // On mount: read localStorage immediately (handles SSR hydration edge cases),
   // then listen for completion events.
@@ -375,24 +394,52 @@ function PlanPageInner() {
     if (res.ok) setMeals((prev) => prev.filter((m) => m.id !== mealId));
   }
 
-  async function handleSwap(targetId: string) {
-    if (!swapSourceId || swapSourceId === targetId) { setSwapSourceId(null); return; }
-    const source = meals.find((m) => m.id === swapSourceId);
-    const target = meals.find((m) => m.id === targetId);
-    if (!source || !target) return;
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    await fetch("/api/meals/swap", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mealAId: source.id,
-        mealBId: target.id,
-        dateA: source.meal_date,
-        dateB: target.meal_date,
-      }),
-    });
-    setSwapSourceId(null);
-    await loadPlan();
+    const oldIndex = meals.findIndex((m) => m.id === active.id);
+    const newIndex = meals.findIndex((m) => m.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // meals is sorted by date — preserve that date sequence, just reassign meals to slots
+    const sortedDates = meals.map((m) => m.meal_date);
+    const reordered = arrayMove([...meals], oldIndex, newIndex);
+    const updatedMeals = reordered.map((meal, i) => ({ ...meal, meal_date: sortedDates[i] }));
+
+    // Optimistic UI update
+    setMeals(updatedMeals);
+
+    // Extend plan end date if any meal now falls past date_to
+    const lastDate = sortedDates[sortedDates.length - 1];
+    if (plan && lastDate > plan.date_to) {
+      const updatedPlan: MealPlan = await fetch("/api/plans", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: plan.id, date_to: lastDate }),
+      }).then((r) => r.json());
+      setPlan(updatedPlan);
+      setDateTo(lastDate);
+    }
+
+    // Persist only the meals whose date actually changed
+    const originalDates = Object.fromEntries(meals.map((m) => [m.id, m.meal_date]));
+    const updates = updatedMeals
+      .filter((m) => m.meal_date !== originalDates[m.id])
+      .map((m) => ({ id: m.id, old_date: originalDates[m.id], meal_date: m.meal_date }));
+
+    if (updates.length > 0) {
+      fetch("/api/meals/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates, planId: plan?.id }),
+      })
+        .then(() => {
+          localStorage.setItem("mealsReorderedAt", Date.now().toString());
+          window.dispatchEvent(new CustomEvent("meals-reordered"));
+        })
+        .catch((err) => console.error("reorder failed:", err));
+    }
   }
 
   if (loading) {
@@ -478,13 +525,6 @@ function PlanPageInner() {
         </div>
       )}
 
-      {/* Swap mode banner */}
-      {swapSourceId && (
-        <div className="rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 px-4 py-2 text-sm text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
-          <span>Velg dagen du vil bytte med</span>
-          <button onClick={() => setSwapSourceId(null)} className="text-xs underline">Avbryt</button>
-        </div>
-      )}
 
       {/* Meal cards + placeholder slots */}
       {meals.length === 0 ? (
@@ -494,7 +534,9 @@ function PlanPageInner() {
           <p className="text-xs mt-1">Trykk «Generer» for å lage en plan</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={meals.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-3">
           {(() => {
             const mealsByDate: Record<string, Meal> = {};
             for (const m of meals) mealsByDate[m.meal_date.substring(0, 10)] = m;
@@ -516,16 +558,9 @@ function PlanPageInner() {
                     key={meal.id}
                     meal={meal}
                     ratings={ratings}
-                    isSwapSource={meal.id === swapSourceId}
-                    isSwapTarget={!!swapSourceId && meal.id !== swapSourceId}
-                    swapMode={!!swapSourceId}
                     showRating={true}
                     onEdit={(fields) => handleEditMeal(meal.id, fields)}
                     onDelete={() => handleDeleteMeal(meal.id)}
-                    onStartSwap={() =>
-                      setSwapSourceId((prev) => (prev === meal.id ? null : meal.id))
-                    }
-                    onConfirmSwap={() => handleSwap(meal.id)}
                     onOpenRecipe={() => setRecipeModalMeal(meal)}
                   />
                 );
@@ -548,7 +583,9 @@ function PlanPageInner() {
               );
             });
           })()}
-        </div>
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Add manual meal */}

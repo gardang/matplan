@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Trash2, ArrowLeftRight, MoveRight } from "lucide-react";
+import { Pencil, Trash2, GripVertical } from "lucide-react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { RecipeLink } from "./RecipeLink";
 import { EditPanel } from "./EditPanel";
 import { MealRatingButtons } from "./MealRating";
@@ -11,32 +13,40 @@ import { DAY_COLORS, DAY_BORDER_CLASSES, DAY_LABELS_LONG } from "@/lib/constants
 interface MealCardProps {
   meal: Meal;
   ratings: Record<string, MealRating>;
-  isSwapSource: boolean;
-  isSwapTarget: boolean;
-  swapMode: boolean;
   showRating: boolean;
   onEdit: (fields: Partial<Meal>) => Promise<void>;
   onDelete: () => void;
-  onStartSwap: () => void;
-  onConfirmSwap: () => void;
   onOpenRecipe: () => void;
 }
 
 export function MealCard({
   meal,
   ratings,
-  isSwapSource,
-  isSwapTarget,
-  swapMode,
   showRating,
   onEdit,
   onDelete,
-  onStartSwap,
-  onConfirmSwap,
   onOpenRecipe,
 }: MealCardProps) {
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: meal.id });
+
+  // Inline style only for dnd-kit transform — cannot be expressed as static Tailwind
+  const dragStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    position: isDragging ? "relative" : undefined,
+    zIndex: isDragging ? 10 : undefined,
+  };
 
   const date = new Date(meal.meal_date + "T12:00:00");
   const dow = date.getDay();
@@ -51,35 +61,27 @@ export function MealCard({
     setEditing(false);
   }
 
-  // Swap target mode
-  if (swapMode && isSwapTarget) {
-    return (
-      <button
-        onClick={onConfirmSwap}
-        className={`w-full text-left rounded-xl border-l-4 ${borderClass} bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 p-4 flex items-center gap-3 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors`}
-      >
-        <MoveRight className="w-5 h-5 text-emerald-600 shrink-0" />
-        <div>
-          <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-            {dayLabel} {dateLabel}
-          </div>
-          <div className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Flytt hit
-          </div>
-        </div>
-      </button>
-    );
-  }
-
   return (
     <div
-      className={`rounded-xl bg-white dark:bg-gray-800 shadow-sm border-l-4 ${borderClass} transition-all ${
-        isSwapSource ? "ring-2 ring-emerald-500" : ""
-      }`}
+      ref={setNodeRef}
+      style={dragStyle}
+      className={`rounded-xl bg-white dark:bg-gray-800 shadow-sm border-l-4 ${borderClass}`}
     >
       <div className="p-4">
         {/* Header */}
-        <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-1">
+          {/* Drag handle */}
+          <button
+            {...attributes}
+            {...listeners}
+            className="mt-1 p-1.5 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 cursor-grab active:cursor-grabbing shrink-0 rounded touch-none"
+            title="Dra for å endre rekkefølge"
+            tabIndex={-1}
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+
+          {/* Meal info — tap to open recipe */}
           <div className="flex-1 min-w-0 cursor-pointer" onClick={onOpenRecipe}>
             <div className="text-xs font-medium text-gray-400 dark:text-gray-500 mb-0.5">
               {dayLabel} {dateLabel}
@@ -97,7 +99,7 @@ export function MealCard({
             )}
           </div>
 
-          {/* Actions */}
+          {/* Action buttons */}
           <div className="flex gap-1 shrink-0">
             <button
               onClick={() => setEditing(!editing)}
@@ -105,17 +107,6 @@ export function MealCard({
               title="Rediger"
             >
               <Pencil className="w-4 h-4" />
-            </button>
-            <button
-              onClick={onStartSwap}
-              className={`p-2 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                isSwapSource
-                  ? "text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40"
-                  : "text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-              title="Flytt"
-            >
-              <ArrowLeftRight className="w-4 h-4" />
             </button>
             {confirmDelete ? (
               <div className="flex gap-1">
@@ -144,7 +135,7 @@ export function MealCard({
           </div>
         </div>
 
-        {/* Rating buttons (shown after the meal date) */}
+        {/* Rating buttons */}
         {showRating && (
           <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
             <div className="text-xs text-gray-400 mb-2">Hvordan smakte det?</div>

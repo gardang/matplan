@@ -64,11 +64,20 @@ function ShoppingPageInner() {
     const storageHandler = (e: StorageEvent) => {
       if (e.key === "generatingPlanId" || e.key === "regeneratingPlanId") check();
     };
+    const handleMealsReordered = () => {
+      if (!planIdRef.current) return;
+      fetch(`/api/shopping?plan_id=${planIdRef.current}`)
+        .then((r) => r.json())
+        .then((data: ShoppingItem[]) => setItems(data))
+        .catch(() => {});
+    };
     window.addEventListener("generation-complete", check);
     window.addEventListener("storage", storageHandler);
+    window.addEventListener("meals-reordered", handleMealsReordered);
     return () => {
       window.removeEventListener("generation-complete", check);
       window.removeEventListener("storage", storageHandler);
+      window.removeEventListener("meals-reordered", handleMealsReordered);
     };
   }, []);
 
@@ -96,8 +105,18 @@ function ShoppingPageInner() {
         fetch(`/api/meals?plan_id=${plan.id}`),
       ]);
 
-      const itemsData: ShoppingItem[] = await itemsRes.json();
+      let itemsData: ShoppingItem[] = await itemsRes.json();
       const mealsData: Meal[] = await mealsRes.json();
+
+      // If a meal reorder completed while we were fetching (race condition), re-fetch items
+      // so we get the updated for_day values. The flag is set by handleDragEnd in plan/page.tsx.
+      const reorderedAt = localStorage.getItem("mealsReorderedAt");
+      if (reorderedAt && Date.now() - Number(reorderedAt) < 10000) {
+        localStorage.removeItem("mealsReorderedAt");
+        const freshRes = await fetch(`/api/shopping?plan_id=${plan.id}`);
+        itemsData = await freshRes.json();
+      }
+
       setItems(itemsData);
       setMeals(mealsData);
     } catch {
