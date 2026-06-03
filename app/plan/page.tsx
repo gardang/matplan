@@ -350,7 +350,9 @@ function PlanPageInner() {
       const updated: Meal = await res.json();
       const updatedMeals = meals.map((m) => (m.id === updated.id ? updated : m));
       setMeals(updatedMeals);
-      regenerateShopping(updatedMeals);
+      // Only regenerate shopping if meal content changed — not for date-only edits
+      const contentChanged = "meal_name" in fields || "description" in fields;
+      if (contentChanged) regenerateShopping(updatedMeals);
     }
   }
 

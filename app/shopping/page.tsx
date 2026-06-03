@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { ShoppingCart, Plus, RefreshCw, CheckCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -33,11 +33,31 @@ function ShoppingPageInner() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const { showToast, ToastContainer } = useToast();
 
+  // Refs so event handlers can read current values without stale closures
+  const bgGeneratingRef = useRef(
+    typeof window !== "undefined" &&
+      (!!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId"))
+  );
+  const planIdRef = useRef<string | null>(null);
+
+  // Keep refs in sync with state
+  useEffect(() => { bgGeneratingRef.current = backgroundGenerating; }, [backgroundGenerating]);
+  useEffect(() => { planIdRef.current = planId; }, [planId]);
+
   useEffect(() => {
     const check = () => {
       const running =
         !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
+      const wasRunning = bgGeneratingRef.current;
+      bgGeneratingRef.current = running;
       setBackgroundGenerating(running);
+      // Regeneration just finished — do one bulk refresh instead of relying on individual real-time events
+      if (wasRunning && !running && planIdRef.current) {
+        fetch(`/api/shopping?plan_id=${planIdRef.current}`)
+          .then((r) => r.json())
+          .then((data: ShoppingItem[]) => setItems(data))
+          .catch(() => {});
+      }
     };
     // Immediate read on mount — handles SSR hydration where useState ran with window=undefined
     check();
@@ -89,7 +109,8 @@ function ShoppingPageInner() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Real-time sync
+  // Real-time sync — suppressed during background regeneration to avoid flicker;
+  // a bulk refresh happens when generation-complete fires instead.
   useEffect(() => {
     if (!planId) return;
     const channel = supabase
@@ -98,6 +119,7 @@ function ShoppingPageInner() {
         "postgres_changes",
         { event: "*", schema: "public", table: "shopping_items", filter: `plan_id=eq.${planId}` },
         (payload) => {
+          if (bgGeneratingRef.current) return;
           if (payload.eventType === "INSERT") {
             setItems((prev) => [...prev, payload.new as ShoppingItem]);
           } else if (payload.eventType === "UPDATE") {
