@@ -207,6 +207,9 @@ function PlanPageInner() {
   async function handleGenerate() {
     setGenerating(true);
     const toastId = showToast("Genererer middagsplan…", "loading");
+    // Track whether we own the generatingPlanId key so we can clean up on error
+    let bgStarted = false;
+
     try {
       // Create plan if it doesn't exist yet for these dates
       let activePlan = plan;
@@ -226,6 +229,12 @@ function PlanPageInner() {
         }
       }
 
+      // Set the background flag BEFORE the AI call — banner shows immediately
+      // on this tab and on any other tab the user navigates to while generation runs.
+      localStorage.setItem("generatingPlanId", activePlan!.id);
+      setBackgroundGenerating(true);
+      bgStarted = true;
+
       const res = await fetch("/api/meals", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -242,7 +251,7 @@ function PlanPageInner() {
       if (!res.ok) {
         if (data.code === "billing" && data.billingUrl) {
           showToast(data.error, "error", { label: "Fyll på kreditter →", href: data.billingUrl });
-          return;
+          return; // finally block will clean up bgStarted
         }
         throw new Error(data.error);
       }
@@ -260,8 +269,8 @@ function PlanPageInner() {
           ].sort((a, b) => a.meal_date.localeCompare(b.meal_date));
         });
 
-        localStorage.setItem("generatingPlanId", activePlan!.id);
-        setBackgroundGenerating(true);
+        // localStorage key already set above — hand off ownership to the fire-and-forget task
+        bgStarted = false;
 
         const finishGeneration = () => {
           localStorage.removeItem("generatingPlanId");
@@ -321,6 +330,11 @@ function PlanPageInner() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Noe gikk galt", "error");
     } finally {
+      // If we claimed the localStorage key but never handed off to a fire-and-forget, clean up now
+      if (bgStarted) {
+        localStorage.removeItem("generatingPlanId");
+        window.dispatchEvent(new Event("generation-complete"));
+      }
       setGenerating(false);
       dismissToast(toastId);
     }
@@ -403,7 +417,7 @@ function PlanPageInner() {
         </div>
         <button
           onClick={handleGenerate}
-          disabled={generating}
+          disabled={generating || backgroundGenerating}
           className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait transition-colors"
         >
           {generating ? (
