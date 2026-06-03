@@ -41,9 +41,17 @@ function PlanPageInner() {
   const [plan, setPlan] = useState<MealPlan | null>(null);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [ratings, setRatings] = useState<Record<string, MealRating>>({});
+  // Background task tracking: two independent keys so concurrent tasks don't cancel each other
+  function anyBgTaskRunning() {
+    return !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
+  }
+
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [backgroundGenerating, setBackgroundGenerating] = useState(false);
+  // Initialize synchronously so the banner appears immediately on mount/navigation
+  const [backgroundGenerating, setBackgroundGenerating] = useState(() =>
+    typeof window !== "undefined" && anyBgTaskRunning()
+  );
   const [allPlans, setAllPlans] = useState<MealPlan[]>([]);
   const [currentPlanIndex, setCurrentPlanIndex] = useState(-1);
   const [swapSourceId, setSwapSourceId] = useState<string | null>(null);
@@ -52,16 +60,23 @@ function PlanPageInner() {
   const [recipeModalMeal, setRecipeModalMeal] = useState<Meal | null>(null);
   const { showToast, dismissToast, ToastContainer } = useToast();
 
-  // Background task tracking: two independent keys so concurrent tasks don't cancel each other
-  function anyBgTaskRunning() {
-    return !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
-  }
-
-  // Listen for any background task completing — re-check remaining tasks
+  // On mount: read localStorage immediately (handles SSR hydration edge cases),
+  // then listen for completion events.
+  // "generation-complete": same-tab signal; "storage": other-tab localStorage changes.
   useEffect(() => {
+    setBackgroundGenerating(anyBgTaskRunning());
     const handler = () => setBackgroundGenerating(anyBgTaskRunning());
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === "generatingPlanId" || e.key === "regeneratingPlanId") {
+        setBackgroundGenerating(anyBgTaskRunning());
+      }
+    };
     window.addEventListener("generation-complete", handler);
-    return () => window.removeEventListener("generation-complete", handler);
+    window.addEventListener("storage", storageHandler);
+    return () => {
+      window.removeEventListener("generation-complete", handler);
+      window.removeEventListener("storage", storageHandler);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Sync URL and localStorage after knowing the plan — does NOT trigger a reload
@@ -100,10 +115,7 @@ function PlanPageInner() {
         setCurrentPlanIndex(plansList.findIndex((p) => p.id === planData.id));
         localStorage.setItem("activePlanId", planData.id);
         window.history.replaceState(null, "", `/plan?id=${planData.id}`);
-        setBackgroundGenerating(
-          localStorage.getItem("generatingPlanId") === planData.id ||
-          localStorage.getItem("regeneratingPlanId") === planData.id
-        );
+        setBackgroundGenerating(anyBgTaskRunning());
 
         const mealsRes = await fetch(`/api/meals?plan_id=${planData.id}`);
         const mealsData: Meal[] = await mealsRes.json();
@@ -227,7 +239,13 @@ function PlanPageInner() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (data.code === "billing" && data.billingUrl) {
+          showToast(data.error, "error", { label: "Fyll på kreditter →", href: data.billingUrl });
+          return;
+        }
+        throw new Error(data.error);
+      }
 
       if (Array.isArray(data.meals) && data.meals.length === 0) {
         throw new Error("Middager ble ikke lagret. Sjekk server-logger for detaljer.");
@@ -269,7 +287,13 @@ function PlanPageInner() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ planId: activePlan!.id }),
-          }).finally(finishGeneration);
+          }).then(async (r) => {
+            finishGeneration();
+            const d = await r.json().catch(() => ({}));
+            if (!r.ok && d.code === "billing" && d.billingUrl) {
+              showToast(d.error, "error", { label: "Fyll på kreditter →", href: d.billingUrl });
+            }
+          }).catch(finishGeneration);
         }
       }
 

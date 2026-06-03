@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { getActiveModel } from "@/lib/app-settings";
+import { anthropicErrorResponse } from "@/lib/anthropic-errors";
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(request: NextRequest) {
@@ -17,14 +18,16 @@ export async function POST(request: NextRequest) {
     const client = new Anthropic();
     const [model, systemPrompt] = await Promise.all([getActiveModel(), buildSystemPrompt()]);
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: 3000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Lag en komplett norsk oppskrift for "${meal_name}"${description ? ` (${description})` : ""}.
+    let response;
+    try {
+      response = await client.messages.create({
+        model,
+        max_tokens: 3000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `Lag en komplett norsk oppskrift for "${meal_name}"${description ? ` (${description})` : ""}.
 
 Returner KUN JSON:
 {
@@ -44,9 +47,14 @@ Difficulty: Enkel, Middels eller Krevende.
 Steps: 4-8 tydelige steg på norsk.
 Category per ingredient — én av: Grønnsaker og frukt, Kjøtt og fisk, Meieri og egg, Brød og bakevarer, Tørrvarer, Frysevarer, Annet
 Svar KUN med JSON.`,
-        },
-      ],
-    });
+          },
+        ],
+      });
+    } catch (aiErr) {
+      console.error("POST /api/meals/generate-recipe — Anthropic error:", aiErr);
+      const { body, status } = anthropicErrorResponse(aiErr);
+      return NextResponse.json(body, { status });
+    }
 
     const text = response.content
       .filter((b) => b.type === "text")

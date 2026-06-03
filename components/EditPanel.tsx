@@ -21,6 +21,7 @@ export function EditPanel({ meal, onSave, onClose }: EditPanelProps) {
   const [ingredientHint, setIngredientHint] = useState("");
   const [suggestions, setSuggestions] = useState<AiMealSuggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [suggestError, setSuggestError] = useState<{ message: string; billingUrl?: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -34,17 +35,25 @@ export function EditPanel({ meal, onSave, onClose }: EditPanelProps) {
   async function fetchSuggestions() {
     setLoadingSuggestions(true);
     setSuggestions([]);
+    setSuggestError(null);
     try {
       const res = await fetch("/api/meals/suggest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date: meal.meal_date, hint: ingredientHint || undefined }),
       });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        setSuggestError({
+          message: data.error ?? "Kunne ikke hente forslag",
+          billingUrl: data.billingUrl,
+        });
+      } else {
         setSuggestions(data.suggestions ?? []);
       }
-    } catch {}
+    } catch {
+      setSuggestError({ message: "Kunne ikke hente forslag. Prøv igjen." });
+    }
     setLoadingSuggestions(false);
   }
 
@@ -150,6 +159,22 @@ export function EditPanel({ meal, onSave, onClose }: EditPanelProps) {
                   style={{ animationDelay: `${d}ms` }}
                 />
               ))}
+            </div>
+          )}
+
+          {suggestError && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2.5 text-sm text-red-700 dark:text-red-300 flex items-center justify-between gap-3">
+              <span>{suggestError.message}</span>
+              {suggestError.billingUrl && (
+                <a
+                  href={suggestError.billingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 font-semibold underline underline-offset-2 hover:opacity-80"
+                >
+                  Fyll på kreditter →
+                </a>
+              )}
             </div>
           )}
 

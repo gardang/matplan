@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { getActiveModel } from "@/lib/app-settings";
+import { anthropicErrorResponse } from "@/lib/anthropic-errors";
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function GET(request: NextRequest) {
@@ -49,13 +50,20 @@ export async function POST(request: NextRequest) {
       { role: "user", content: message },
     ];
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages,
-      tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
-    });
+    let response;
+    try {
+      response = await client.messages.create({
+        model,
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages,
+        tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+      });
+    } catch (aiErr) {
+      console.error("POST /api/chat — Anthropic error:", aiErr);
+      const { body, status } = anthropicErrorResponse(aiErr);
+      return NextResponse.json(body, { status });
+    }
 
     const assistantText = response.content
       .filter((b) => b.type === "text")

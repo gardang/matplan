@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { getActiveModel } from "@/lib/app-settings";
 import { matchUrlToRecipe, fallbackSearchUrl } from "@/lib/normalize";
+import { anthropicErrorResponse } from "@/lib/anthropic-errors";
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(request: NextRequest) {
@@ -23,13 +24,20 @@ Returner KUN dette JSON-objektet, ingen annen tekst:
 {"suggestions":[{"name":"...","description":"...","source":"...","extraIngredients":"...","recipeUrl":"https://..."}]}`;
 
     const client = new Anthropic();
-    const response = await client.messages.create({
-      model,
-      max_tokens: 3000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-      tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
-    });
+    let response;
+    try {
+      response = await client.messages.create({
+        model,
+        max_tokens: 3000,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+        tools: [{ type: "web_search_20250305" as const, name: "web_search" }],
+      });
+    } catch (aiErr) {
+      console.error("POST /api/meals/suggest — Anthropic error:", aiErr);
+      const { body, status } = anthropicErrorResponse(aiErr);
+      return NextResponse.json(body, { status });
+    }
 
     // Extract text and search result URLs
     const text = response.content

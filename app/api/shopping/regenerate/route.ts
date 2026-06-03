@@ -4,6 +4,7 @@ import { createServerClient } from "@/lib/supabase-server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { getActiveModel } from "@/lib/app-settings";
 import { normalizeItemName } from "@/lib/normalize";
+import { anthropicErrorResponse } from "@/lib/anthropic-errors";
 import Anthropic from "@anthropic-ai/sdk";
 
 export async function POST(request: NextRequest) {
@@ -39,17 +40,24 @@ export async function POST(request: NextRequest) {
       .map((m: { meal_name: string; meal_date: string }) => `- ${m.meal_name} (${m.meal_date})`)
       .join("\n");
 
-    const response = await client.messages.create({
-      model,
-      max_tokens: 8000,
-      system: systemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Lag en handleliste for disse middagene:\n${mealList}\n\nReturner JSON: {"items":[{"name":"...","quantity":"...","category":"...","forDay":"YYYY-MM-DD"}]}\nSvar KUN med JSON.`,
-        },
-      ],
-    });
+    let response;
+    try {
+      response = await client.messages.create({
+        model,
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `Lag en handleliste for disse middagene:\n${mealList}\n\nReturner JSON: {"items":[{"name":"...","quantity":"...","category":"...","forDay":"YYYY-MM-DD"}]}\nSvar KUN med JSON.`,
+          },
+        ],
+      });
+    } catch (aiErr) {
+      console.error("POST /api/shopping/regenerate — Anthropic error:", aiErr);
+      const { body, status } = anthropicErrorResponse(aiErr);
+      return NextResponse.json(body, { status });
+    }
 
     const text = response.content
       .filter((b) => b.type === "text")

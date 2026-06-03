@@ -5,13 +5,19 @@ import { X } from "lucide-react";
 
 export type ToastType = "success" | "error" | "loading";
 
+interface ToastLink {
+  label: string;
+  href: string;
+}
+
 interface ToastProps {
   message: string;
   type: ToastType;
   onDismiss: () => void;
+  link?: ToastLink;
 }
 
-export function Toast({ message, type, onDismiss }: ToastProps) {
+export function Toast({ message, type, onDismiss, link }: ToastProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -50,6 +56,16 @@ export function Toast({ message, type, onDismiss }: ToastProps) {
         </span>
       )}
       <span className="flex-1">{message}</span>
+      {link && (
+        <a
+          href={link.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 underline underline-offset-2 whitespace-nowrap font-semibold hover:opacity-80"
+        >
+          {link.label}
+        </a>
+      )}
       {type !== "loading" && (
         <button onClick={onDismiss} className="shrink-0 opacity-70 hover:opacity-100">
           <X className="w-4 h-4" />
@@ -65,6 +81,7 @@ interface ToastState {
   id: number;
   message: string;
   type: ToastType;
+  link?: ToastLink;
 }
 
 let nextId = 0;
@@ -72,9 +89,9 @@ let nextId = 0;
 export function useToast() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
 
-  function showToast(message: string, type: ToastType = "success") {
+  function showToast(message: string, type: ToastType = "success", link?: ToastLink) {
     const id = ++nextId;
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type, link }]);
     return id;
   }
 
@@ -86,7 +103,7 @@ export function useToast() {
     return (
       <>
         {toasts.map((t) => (
-          <Toast key={t.id} message={t.message} type={t.type} onDismiss={() => dismissToast(t.id)} />
+          <Toast key={t.id} message={t.message} type={t.type} link={t.link} onDismiss={() => dismissToast(t.id)} />
         ))}
       </>
     );

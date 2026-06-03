@@ -25,18 +25,31 @@ function ShoppingPageInner() {
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [loading, setLoading] = useState(true);
-  const [backgroundGenerating, setBackgroundGenerating] = useState(false);
+  // Initialize synchronously so the banner appears immediately on mount/navigation
+  const [backgroundGenerating, setBackgroundGenerating] = useState(() =>
+    typeof window !== "undefined" &&
+    (!!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId"))
+  );
   const [addModalOpen, setAddModalOpen] = useState(false);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
-    const handler = () => {
-      const stillRunning =
+    const check = () => {
+      const running =
         !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId");
-      setBackgroundGenerating(stillRunning);
+      setBackgroundGenerating(running);
     };
-    window.addEventListener("generation-complete", handler);
-    return () => window.removeEventListener("generation-complete", handler);
+    // Immediate read on mount — handles SSR hydration where useState ran with window=undefined
+    check();
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === "generatingPlanId" || e.key === "regeneratingPlanId") check();
+    };
+    window.addEventListener("generation-complete", check);
+    window.addEventListener("storage", storageHandler);
+    return () => {
+      window.removeEventListener("generation-complete", check);
+      window.removeEventListener("storage", storageHandler);
+    };
   }, []);
 
   // Load plan: URL ?id → localStorage activePlanId → most recent
@@ -55,8 +68,7 @@ function ShoppingPageInner() {
       localStorage.setItem("activePlanId", plan.id);
       window.history.replaceState(null, "", `/shopping?id=${plan.id}`);
       setBackgroundGenerating(
-        localStorage.getItem("generatingPlanId") === plan.id ||
-        localStorage.getItem("regeneratingPlanId") === plan.id
+        !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId")
       );
 
       const [itemsRes, mealsRes] = await Promise.all([
@@ -211,11 +223,18 @@ function ShoppingPageInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ planId, meals }),
       });
-      const data: ShoppingItem[] = await res.json();
-      setItems(data);
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.code === "billing" && data.billingUrl) {
+          showToast(data.error, "error", { label: "Fyll på kreditter →", href: data.billingUrl });
+          return;
+        }
+        throw new Error(data.error ?? "Kunne ikke regenerere listen");
+      }
+      setItems(data as ShoppingItem[]);
       showToast("Handleliste oppdatert!", "success");
-    } catch {
-      showToast("Kunne ikke regenerere listen", "error");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Kunne ikke regenerere listen", "error");
     }
   }
 

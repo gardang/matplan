@@ -44,7 +44,14 @@ export default function ChatPage() {
         body: JSON.stringify({ message: text, history }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) {
+        if (data.code === "billing" && data.billingUrl) {
+          showToast(data.error, "error", { label: "Fyll på kreditter →", href: data.billingUrl });
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          return;
+        }
+        throw new Error(data.error);
+      }
 
       setMessages((prev) => [
         ...prev,

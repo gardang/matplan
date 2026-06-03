@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { getActiveModel } from "@/lib/app-settings";
+import { anthropicErrorResponse, parseAnthropicError } from "@/lib/anthropic-errors";
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiRecipe } from "@/lib/types";
 
@@ -56,12 +57,22 @@ export async function POST(request: NextRequest) {
     // so real-time subscriptions on the client see cards populate as they finish
     const results = await Promise.allSettled(
       meals.map(async (meal) => {
-        const response = await client.messages.create({
-          model,
-          max_tokens: 3000,
-          system: systemPrompt,
-          messages: [{ role: "user", content: RECIPE_PROMPT(meal.meal_name, meal.description) }],
-        });
+        let response;
+        try {
+          response = await client.messages.create({
+            model,
+            max_tokens: 3000,
+            system: systemPrompt,
+            messages: [{ role: "user", content: RECIPE_PROMPT(meal.meal_name, meal.description) }],
+          });
+        } catch (aiErr) {
+          const parsed = parseAnthropicError(aiErr);
+          // Attach structured info so the outer handler can distinguish billing errors
+          const enriched = new Error(parsed.message) as Error & { aiCode?: string; billingUrl?: string };
+          enriched.aiCode = parsed.code;
+          if (parsed.billingUrl) enriched.billingUrl = parsed.billingUrl;
+          throw enriched;
+        }
 
         const text = response.content
           .filter((b) => b.type === "text")
@@ -107,6 +118,19 @@ export async function POST(request: NextRequest) {
         }
       })
     );
+
+    // Check if any failure was a billing error — surface that immediately
+    for (const result of results) {
+      if (result.status === "rejected") {
+        const err = result.reason as Error & { aiCode?: string; billingUrl?: string };
+        if (err.aiCode === "billing") {
+          return NextResponse.json(
+            { error: err.message, code: "billing", billingUrl: err.billingUrl },
+            { status: 402 }
+          );
+        }
+      }
+    }
 
     const generated = results.filter((r) => r.status === "fulfilled").length;
     const errors = results
