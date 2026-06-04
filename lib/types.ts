@@ -96,6 +96,7 @@ export interface ShoppingPattern {
   times_bought: number;
   last_bought: string | null;
   category: string | null;
+  category_override: string | null;
   typical_frequency: "weekly" | "biweekly" | "monthly" | "occasional" | null;
   updated_at: string;
 }

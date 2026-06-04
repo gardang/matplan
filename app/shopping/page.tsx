@@ -9,7 +9,7 @@ import { CATEGORIES } from "@/lib/constants";
 import type { ShoppingCategory } from "@/lib/types";
 import { ShopItem } from "@/components/ShopItem";
 import { useToast } from "@/components/Toast";
-import type { ShoppingItem, MergedItem, Meal } from "@/lib/types";
+import type { ShoppingItem, MergedItem, Meal, ShoppingPattern } from "@/lib/types";
 
 export default function ShoppingPage() {
   return (
@@ -26,6 +26,7 @@ function ShoppingPageInner() {
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
   const [categories, setCategories] = useState<string[]>(CATEGORIES as unknown as string[]);
+  const [patterns, setPatterns] = useState<ShoppingPattern[]>([]);
   const [loading, setLoading] = useState(true);
   // Initialize synchronously so the banner appears immediately on mount/navigation
   const [backgroundGenerating, setBackgroundGenerating] = useState(() =>
@@ -102,17 +103,22 @@ function ShoppingPageInner() {
         !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId")
       );
 
-      const [itemsRes, mealsRes, categoriesRes] = await Promise.all([
+      const [itemsRes, mealsRes, categoriesRes, patternsRes] = await Promise.all([
         fetch(`/api/shopping?plan_id=${plan.id}`),
         fetch(`/api/meals?plan_id=${plan.id}`),
         fetch("/api/settings/categories"),
+        fetch("/api/shopping/patterns"),
       ]);
 
       let itemsData: ShoppingItem[] = await itemsRes.json();
       const mealsData: Meal[] = await mealsRes.json();
       const categoriesData: ShoppingCategory[] = await categoriesRes.json();
+      const patternsData: ShoppingPattern[] = await patternsRes.json();
       if (Array.isArray(categoriesData) && categoriesData.length > 0) {
         setCategories(categoriesData.filter((c) => c.active).map((c) => c.name));
+      }
+      if (Array.isArray(patternsData)) {
+        setPatterns(patternsData);
       }
 
       // If a meal reorder completed while we were fetching (race condition), re-fetch items
@@ -147,7 +153,12 @@ function ShoppingPageInner() {
         (payload) => {
           if (bgGeneratingRef.current) return;
           if (payload.eventType === "INSERT") {
-            setItems((prev) => [...prev, payload.new as ShoppingItem]);
+            setItems((prev) => {
+              const incoming = payload.new as ShoppingItem;
+              // Skip if already added optimistically (handleAddItem sets state immediately)
+              if (prev.some((i) => i.id === incoming.id)) return prev;
+              return [...prev, incoming];
+            });
           } else if (payload.eventType === "UPDATE") {
             setItems((prev) =>
               prev.map((i) => (i.id === (payload.new as ShoppingItem).id ? (payload.new as ShoppingItem) : i))
@@ -219,16 +230,41 @@ function ShoppingPageInner() {
     );
   }
 
-  async function handleEdit(item: MergedItem, name: string, quantity: string) {
-    // Update all underlying items
+  async function handleEdit(item: MergedItem, name: string, quantity: string, category: string) {
+    const categoryChanged = category !== item.category;
+
+    // Update all underlying shopping_items rows
     await fetch("/api/shopping", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: item.ids, item_name: name, quantity, is_auto: false, is_edited: true }),
+      body: JSON.stringify({ ids: item.ids, item_name: name, quantity, category, is_auto: false, is_edited: true }),
     });
+
+    // Save category override to patterns whenever the user explicitly changes it
+    if (categoryChanged) {
+      const normalizedName = normalizeItemName(name).toLowerCase();
+      try {
+        const r = await fetch("/api/shopping/patterns", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ normalized_name: normalizedName, category_override: category }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const updated: ShoppingPattern = await r.json();
+        setPatterns((prev) => {
+          const idx = prev.findIndex((p) => p.id === updated.id);
+          return idx >= 0 ? prev.map((p, i) => (i === idx ? updated : p)) : [...prev, updated];
+        });
+        showToast(`"${name}" lagres alltid i ${category}`, "success");
+      } catch (e) {
+        console.error("Patterns PUT failed:", e);
+        showToast("Kunne ikke lagre kategorioverstyring", "error");
+      }
+    }
+
     setItems((prev) =>
       prev.map((i) =>
-        item.ids.includes(i.id) ? { ...i, item_name: name, quantity, is_edited: true, is_auto: false } : i
+        item.ids.includes(i.id) ? { ...i, item_name: name, quantity, category, is_edited: true, is_auto: false } : i
       )
     );
   }
@@ -371,9 +407,10 @@ function ShoppingPageInner() {
                     <ShopItem
                       key={item.ids.join("-")}
                       item={item}
+                      categories={categories}
                       mealRecipeUrls={mealRecipeUrls}
                       onToggle={() => handleToggle(item)}
-                      onEdit={(name, qty) => handleEdit(item, name, qty)}
+                      onEdit={(name, qty, cat) => handleEdit(item, name, qty, cat)}
                       onDelete={() => handleDelete(item)}
                     />
                   ))}
@@ -407,6 +444,7 @@ function ShoppingPageInner() {
       {addModalOpen && (
         <AddItemModal
           categories={categories}
+          patterns={patterns}
           onAdd={async (name, quantity, category) => {
             await handleAddItem(name, quantity, category);
             setAddModalOpen(false);
@@ -422,10 +460,12 @@ function ShoppingPageInner() {
 
 function AddItemModal({
   categories,
+  patterns,
   onAdd,
   onClose,
 }: {
   categories: string[];
+  patterns: ShoppingPattern[];
   onAdd: (name: string, quantity: string, category: string) => Promise<void>;
   onClose: () => void;
 }) {
@@ -433,7 +473,23 @@ function AddItemModal({
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("");
   const [category, setCategory] = useState(defaultCat);
+  const [quantityTouched, setQuantityTouched] = useState(false);
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Build lookup map: normalizedName → pattern
+  const patternMap = new Map(patterns.map((p) => [p.normalized_name, p]));
+
+  function applyPattern(rawName: string) {
+    const norm = normalizeItemName(rawName).toLowerCase();
+    const p = patternMap.get(norm);
+    if (!p) return;
+    if (!quantityTouched && p.avg_quantity) setQuantity(p.avg_quantity);
+    if (!categoryTouched) {
+      const cat = p.category_override ?? p.category ?? null;
+      if (cat && categories.includes(cat)) setCategory(cat);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -455,18 +511,19 @@ function AddItemModal({
           autoFocus
           value={name}
           onChange={(e) => setName(e.target.value)}
+          onBlur={(e) => applyPattern(e.target.value)}
           placeholder="Varenavn"
           className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
         />
         <input
           value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
+          onChange={(e) => { setQuantity(e.target.value); setQuantityTouched(true); }}
           placeholder="Mengde (valgfritt, f.eks. 2 stk)"
           className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
         />
         <select
           value={category}
-          onChange={(e) => setCategory(e.target.value)}
+          onChange={(e) => { setCategory(e.target.value); setCategoryTouched(true); }}
           className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
         >
           {categories.map((c) => (

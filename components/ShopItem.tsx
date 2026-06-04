@@ -7,16 +7,18 @@ import type { MergedItem } from "@/lib/types";
 
 interface ShopItemProps {
   item: MergedItem;
+  categories: string[];
   mealRecipeUrls: Record<string, string | null>; // date → recipe_url
   onToggle: () => void;
-  onEdit: (name: string, quantity: string) => void;
+  onEdit: (name: string, quantity: string, category: string) => void;
   onDelete: () => void;
 }
 
-export function ShopItem({ item, mealRecipeUrls, onToggle, onEdit, onDelete }: ShopItemProps) {
+export function ShopItem({ item, categories, mealRecipeUrls, onToggle, onEdit, onDelete }: ShopItemProps) {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(item.name);
   const [editQty, setEditQty] = useState(item.displayQty);
+  const [editCategory, setEditCategory] = useState(item.category);
   const containerRef = useRef<HTMLDivElement>(null);
   const allChecked = item.checkedArr.every(Boolean);
 
@@ -28,13 +30,18 @@ export function ShopItem({ item, mealRecipeUrls, onToggle, onEdit, onDelete }: S
   }
 
   function handleSave() {
-    onEdit(editName.trim() || item.name, editQty.trim());
+    onEdit(editName.trim() || item.name, editQty.trim(), editCategory);
     setEditing(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter") handleSave();
-    if (e.key === "Escape") { setEditing(false); setEditName(item.name); setEditQty(item.displayQty); }
+    if (e.key === "Escape") {
+      setEditing(false);
+      setEditName(item.name);
+      setEditQty(item.displayQty);
+      setEditCategory(item.category);
+    }
   }
 
   return (
@@ -86,11 +93,33 @@ export function ShopItem({ item, mealRecipeUrls, onToggle, onEdit, onDelete }: S
               OK
             </button>
             <button
-              onMouseDown={(e) => { e.preventDefault(); setEditing(false); setEditName(item.name); setEditQty(item.displayQty); }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setEditing(false);
+                setEditName(item.name);
+                setEditQty(item.displayQty);
+                setEditCategory(item.category);
+              }}
               className="px-2 py-1 bg-gray-100 text-gray-600 rounded-lg text-xs hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 min-h-[32px]"
             >
               <X className="w-3 h-3" />
             </button>
+            {/* Category row */}
+            <div className="w-full flex items-center gap-2 mt-1">
+              <span className="text-xs text-gray-400 shrink-0">Kategori:</span>
+              <select
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+                className="flex-1 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+              >
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              {editCategory !== item.category && (
+                <span className="text-xs text-amber-500 shrink-0">lagres som standard</span>
+              )}
+            </div>
           </div>
         ) : (
           <button

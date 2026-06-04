@@ -95,6 +95,7 @@ create table if not exists shopping_patterns (
   times_bought       integer default 0,
   last_bought        date,
   category           text default 'Annet',
+  category_override  text,                                              -- user-set, overrides AI category
   typical_frequency  text default 'weekly',
   updated_at         timestamptz default now()
 );

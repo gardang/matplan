@@ -93,24 +93,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "AI svarte ikke med gyldig JSON" }, { status: 500 });
     }
 
-    // Step 4: deduplicate against kept items, insert new
+    // Step 4: load category overrides for post-processing
+    const { data: overrideRows } = await supabase
+      .from("shopping_patterns")
+      .select("normalized_name, category_override")
+      .not("category_override", "is", null);
+    const overrideMap = new Map<string, string>(
+      (overrideRows ?? []).map((r: { normalized_name: string; category_override: string }) => [
+        r.normalized_name,
+        r.category_override,
+      ])
+    );
+
+    // Step 5: deduplicate against kept items, insert new
     const toInsert = parsed.items.filter(
       (item) => !keptNormalized.has(normalizeItemName(item.name).toLowerCase())
     );
 
     if (toInsert.length > 0) {
       await supabase.from("shopping_items").insert(
-        toInsert.map((item) => ({
-          plan_id: planId,
-          item_name: item.name,
-          quantity: item.quantity ?? null,
-          category: item.category ?? "Annet",
-          for_day: item.forDay ?? null,
-          is_auto: true,
-          is_edited: false,
-          is_staple: false,
-          checked: false,
-        }))
+        toInsert.map((item) => {
+          const normKey = normalizeItemName(item.name).toLowerCase();
+          const category = overrideMap.get(normKey) ?? item.category ?? "Annet";
+          return {
+            plan_id: planId,
+            item_name: item.name,
+            quantity: item.quantity ?? null,
+            category,
+            for_day: item.forDay ?? null,
+            is_auto: true,
+            is_edited: false,
+            is_staple: false,
+            checked: false,
+          };
+        })
       );
     }
 

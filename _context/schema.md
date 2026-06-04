@@ -19,7 +19,8 @@ id UUID PK · who TEXT ('Familie' or member name) · category TEXT (dislikes/nev
 id UUID PK · meal_name TEXT (unique index on lower) · rating TEXT (loved/ok/disliked/never_again) · rated_by TEXT · notes TEXT · recipe_url TEXT · tags TEXT[] · times_made INT · last_made DATE · created_at · updated_at
 
 ## shopping_patterns
-id UUID PK · item_name TEXT · normalized_name TEXT (unique index on lower) · avg_quantity TEXT · times_bought INT · last_bought DATE · category TEXT · typical_frequency TEXT (weekly/biweekly/monthly/occasional) · updated_at
+id UUID PK · item_name TEXT · normalized_name TEXT (unique index on lower) · avg_quantity TEXT · times_bought INT · last_bought DATE · category TEXT (auto-learned) · category_override TEXT (user-set, overrides AI) · typical_frequency TEXT (weekly/biweekly/monthly/occasional) · updated_at
+category_override: when set, used instead of AI-assigned category. Applied post-processing in regenerate + injected into system prompt.
 
 ## chat_messages
 id UUID PK · plan_id FK→meal_plans SET NULL · role TEXT (user/assistant) · content TEXT · created_at

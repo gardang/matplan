@@ -140,6 +140,21 @@ export async function buildSystemPrompt(
     }
   }
 
+  // ── Category overrides — always inject regardless of times_bought ────────
+  const { data: overridePatterns } = await supabase
+    .from("shopping_patterns")
+    .select("item_name, category_override")
+    .not("category_override", "is", null);
+
+  if (overridePatterns && overridePatterns.length > 0) {
+    const lines = overridePatterns
+      .map((p: { item_name: string; category_override: string }) => `- ${p.item_name} → ${p.category_override}`)
+      .join("\n");
+    sections.push(
+      `## Varekategorier (brukerdefinert — aldri overstyr disse)\nDisse varene skal ALLTID plasseres i den angitte kategorien, uansett hva du ellers ville valgt:\n${lines}`
+    );
+  }
+
   // ── Shopping patterns (≥3 purchases) ──────────────────────────────────────
   const { data: patterns } = await supabase
     .from("shopping_patterns")

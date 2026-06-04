@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp, PackageSearch, X } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
-import type { FamilyMember, FamilyPreference, MealPlan, MealRating, ShoppingCategory } from "@/lib/types";
+import type { FamilyMember, FamilyPreference, MealPlan, MealRating, ShoppingCategory, ShoppingPattern } from "@/lib/types";
 
 export default function SettingsPage() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [ratings, setRatings] = useState<MealRating[]>([]);
   const [plans, setPlans] = useState<(MealPlan & { meal_count: number })[]>([]);
   const [categories, setCategories] = useState<ShoppingCategory[]>([]);
+  const [patterns, setPatterns] = useState<ShoppingPattern[]>([]);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
@@ -34,8 +35,9 @@ export default function SettingsPage() {
       fetch("/api/meals/counts").then((r) => r.json()),
       fetch("/api/ratings").then((r) => r.json()),
       fetch("/api/settings/categories").then((r) => r.json()),
+      fetch("/api/shopping/patterns").then((r) => r.json()),
     ])
-      .then(([m, p, { model }, rm, plansList, counts, ratingsList, catList]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>, MealRating[], ShoppingCategory[]]) => {
+      .then(([m, p, { model }, rm, plansList, counts, ratingsList, catList, patternList]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>, MealRating[], ShoppingCategory[], ShoppingPattern[]]) => {
         setMembers(m);
         setPrefs(p);
         if (model) setActiveModel(model);
@@ -47,6 +49,7 @@ export default function SettingsPage() {
         );
         setRatings(ratingsList ?? []);
         setCategories(catList ?? []);
+        setPatterns(patternList ?? []);
       })
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
@@ -244,6 +247,18 @@ export default function SettingsPage() {
     await moveCategoryUp(index + 1);
   }
 
+  async function setPatternOverride(pattern: ShoppingPattern, category_override: string | null) {
+    const res = await fetch("/api/shopping/patterns", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: pattern.id, category_override }),
+    });
+    if (res.ok) {
+      const updated: ShoppingPattern = await res.json();
+      setPatterns((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    }
+  }
+
   const PREF_LABELS: Record<string, string> = {
     dislikes: "Liker ikke",
     never_use: "Aldri",
@@ -437,6 +452,51 @@ export default function SettingsPage() {
           />
         )}
       </CollapsibleSection>
+
+      {/* Category overrides */}
+      {(() => {
+        const overrides = patterns.filter((p) => p.category_override);
+        const categoryNames = categories.filter((c) => c.active).map((c) => c.name);
+        return (
+          <CollapsibleSection
+            icon={<PackageSearch className="w-4 h-4" />}
+            title="Kategori-overstyringer"
+            badge={overrides.length > 0 ? String(overrides.length) : undefined}
+          >
+            <p className="text-xs text-gray-400">
+              Sett kategori på en vare i handlelisten — den huskes for alltid. Administrer dem her.
+            </p>
+
+            {overrides.length > 0 ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+                {overrides.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex-1 text-sm text-gray-900 dark:text-gray-100 truncate">{p.item_name}</span>
+                    <select
+                      value={p.category_override ?? ""}
+                      onChange={(e) => setPatternOverride(p, e.target.value || null)}
+                      className="rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+                    >
+                      {categoryNames.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => setPatternOverride(p, null)}
+                      title="Fjern overstyring"
+                      className="p-1.5 text-gray-400 hover:text-red-400 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Ingen overstyringer ennå. Endre kategori på en vare i handlelisten for å opprette en.</p>
+            )}
+          </CollapsibleSection>
+        );
+      })()}
 
       {/* Family members */}
       <CollapsibleSection
