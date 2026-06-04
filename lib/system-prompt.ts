@@ -3,9 +3,9 @@
 
 import { createServerClient } from "./supabase-server";
 import { toLocalDateString } from "./normalize";
-import { DAY_LABELS_LONG } from "./constants";
+import { DAY_LABELS_LONG, CATEGORIES } from "./constants";
 
-const BASE_PROMPT = `Du er en hjelpsomme matplanlegger for familien Ellefsen i Lillestrøm, Norge.
+const BASE_PROMPT_HEAD = `Du er en hjelpsomme matplanlegger for familien Ellefsen i Lillestrøm, Norge.
 Du hjelper med å planlegge middager, generere handlelister og svare på spørsmål om mat og oppskrifter.
 
 Regler for middagsbeskrivelser:
@@ -20,14 +20,26 @@ Regler for handleliste:
 - Paprika: ALLTID med farge, standard rød
 - Løk: ALLTID med type, standard rødløk
 - Ingen parenteser, ingen "eller"-konstruksjoner
-- Bruk "stk" for tellbare varer
-- Grupper varer etter kategori: Grønnsaker og frukt, Kjøtt og fisk, Meieri og egg, Brød og bakevarer, Tørrvarer, Frysevarer, Krydder og sauser, Hermetikk, Drikke, Snacks og godteri, Rengjøring, Annet`;
+- Bruk "stk" for tellbare varer`;
 
 export async function buildSystemPrompt(
   dateFrom?: string,
   dateTo?: string
 ): Promise<string> {
   const supabase = createServerClient();
+
+  // ── Shopping categories (dynamic from DB) ────────────────────────────────
+  const { data: catRows } = await supabase
+    .from("shopping_categories")
+    .select("name")
+    .eq("active", true)
+    .order("sort_order");
+  const categoryList =
+    catRows && catRows.length > 0
+      ? catRows.map((c: { name: string }) => c.name).join(", ")
+      : (CATEGORIES as readonly string[]).join(", ");
+
+  const BASE_PROMPT = `${BASE_PROMPT_HEAD}\n- Grupper varer etter kategori: ${categoryList}`;
   const sections: string[] = [BASE_PROMPT];
 
   // ── Family members ────────────────────────────────────────────────────────

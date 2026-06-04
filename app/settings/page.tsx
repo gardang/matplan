@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
-import type { FamilyMember, FamilyPreference, MealPlan, MealRating } from "@/lib/types";
+import type { FamilyMember, FamilyPreference, MealPlan, MealRating, ShoppingCategory } from "@/lib/types";
 
 export default function SettingsPage() {
   const [members, setMembers] = useState<FamilyMember[]>([]);
@@ -18,8 +18,10 @@ export default function SettingsPage() {
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [editingPref, setEditingPref] = useState<FamilyPreference | null>(null);
   const [editingRating, setEditingRating] = useState<MealRating | null>(null);
+  const [editingCategory, setEditingCategory] = useState<ShoppingCategory | null>(null);
   const [ratings, setRatings] = useState<MealRating[]>([]);
   const [plans, setPlans] = useState<(MealPlan & { meal_count: number })[]>([]);
+  const [categories, setCategories] = useState<ShoppingCategory[]>([]);
   const { showToast, ToastContainer } = useToast();
 
   useEffect(() => {
@@ -31,8 +33,9 @@ export default function SettingsPage() {
       fetch("/api/plans?list=true").then((r) => r.json()),
       fetch("/api/meals/counts").then((r) => r.json()),
       fetch("/api/ratings").then((r) => r.json()),
+      fetch("/api/settings/categories").then((r) => r.json()),
     ])
-      .then(([m, p, { model }, rm, plansList, counts, ratingsList]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>, MealRating[]]) => {
+      .then(([m, p, { model }, rm, plansList, counts, ratingsList, catList]: [FamilyMember[], FamilyPreference[], { model: string }, { mode: string }, MealPlan[], Record<string, number>, MealRating[], ShoppingCategory[]]) => {
         setMembers(m);
         setPrefs(p);
         if (model) setActiveModel(model);
@@ -43,6 +46,7 @@ export default function SettingsPage() {
             .map((pl) => ({ ...pl, meal_count: counts[pl.id] ?? 0 }))
         );
         setRatings(ratingsList ?? []);
+        setCategories(catList ?? []);
       })
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
@@ -160,6 +164,84 @@ export default function SettingsPage() {
     if (!confirm("Slett vurdering?")) return;
     const res = await fetch(`/api/ratings?id=${id}`, { method: "DELETE" });
     if (res.ok) setRatings((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleAddCategory(name: string) {
+    const res = await fetch("/api/settings/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      const cat: ShoppingCategory = await res.json();
+      setCategories((prev) => [...prev, cat]);
+      showToast("Kategori lagt til", "success");
+    } else {
+      showToast("Kunne ikke legge til kategori", "error");
+    }
+  }
+
+  async function handleRenameCategory(id: string, name: string) {
+    const res = await fetch("/api/settings/categories", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name }),
+    });
+    if (res.ok) {
+      const updated: ShoppingCategory = await res.json();
+      setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      setEditingCategory(null);
+    } else {
+      showToast("Kunne ikke oppdatere kategori", "error");
+    }
+  }
+
+  async function toggleCategory(cat: ShoppingCategory) {
+    const res = await fetch("/api/settings/categories", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: cat.id, active: !cat.active }),
+    });
+    if (res.ok) {
+      const updated: ShoppingCategory = await res.json();
+      setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    }
+  }
+
+  async function deleteCategory(id: string) {
+    if (!confirm("Slett kategori? Varer med denne kategorien vises ikke lenger i listen.")) return;
+    const res = await fetch(`/api/settings/categories?id=${id}`, { method: "DELETE" });
+    if (res.ok) setCategories((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  async function moveCategoryUp(index: number) {
+    if (index === 0) return;
+    const a = categories[index - 1];
+    const b = categories[index];
+    // Swap sort_order values
+    await Promise.all([
+      fetch("/api/settings/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: a.id, sort_order: b.sort_order }),
+      }),
+      fetch("/api/settings/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: b.id, sort_order: a.sort_order }),
+      }),
+    ]);
+    setCategories((prev) => {
+      const next = [...prev];
+      next[index - 1] = { ...a, sort_order: b.sort_order };
+      next[index] = { ...b, sort_order: a.sort_order };
+      return next.sort((x, y) => x.sort_order - y.sort_order);
+    });
+  }
+
+  async function moveCategoryDown(index: number) {
+    if (index >= categories.length - 1) return;
+    await moveCategoryUp(index + 1);
   }
 
   const PREF_LABELS: Record<string, string> = {
@@ -284,6 +366,75 @@ export default function SettingsPage() {
               );
             })}
           </div>
+        )}
+      </CollapsibleSection>
+
+      {/* Shopping categories */}
+      <CollapsibleSection
+        icon={<Tag className="w-4 h-4" />}
+        title="Handlekategorier"
+        badge={String(categories.length)}
+        action={
+          <AddCategoryButton
+            onAdd={handleAddCategory}
+          />
+        }
+      >
+        {categories.length === 0 ? (
+          <p className="text-sm text-gray-400">Ingen kategorier ennå.</p>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+            {categories.map((cat, idx) => (
+              <div key={cat.id} className={`flex items-center gap-2 px-4 py-3 ${!cat.active ? "opacity-50" : ""}`}>
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    onClick={() => moveCategoryUp(idx)}
+                    disabled={idx === 0}
+                    className="text-gray-300 dark:text-gray-600 hover:text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Flytt opp"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => moveCategoryDown(idx)}
+                    disabled={idx === categories.length - 1}
+                    className="text-gray-300 dark:text-gray-600 hover:text-gray-500 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Flytt ned"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <span className="flex-1 text-sm text-gray-900 dark:text-gray-100">{cat.name}</span>
+                <button
+                  onClick={() => toggleCategory(cat)}
+                  className={`px-2 py-1 rounded-lg text-xs ${cat.active ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"}`}
+                >
+                  {cat.active ? "Aktiv" : "Skjult"}
+                </button>
+                <button
+                  onClick={() => setEditingCategory(cat)}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  title="Gi nytt navn"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => deleteCategory(cat.id)}
+                  className="p-2 text-gray-400 hover:text-red-500 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
+                  title="Slett"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {editingCategory && (
+          <EditCategoryModal
+            category={editingCategory}
+            onSave={(name) => handleRenameCategory(editingCategory.id, name)}
+            onClose={() => setEditingCategory(null)}
+          />
         )}
       </CollapsibleSection>
 
@@ -899,5 +1050,122 @@ function AddPrefButton({ members, onAdd }: AddPrefButtonProps) {
         </div>
       )}
     </>
+  );
+}
+
+// ── Add category button ───────────────────────────────────────────────────────
+
+interface AddCategoryButtonProps {
+  onAdd: (name: string) => Promise<void>;
+}
+
+function AddCategoryButton({ onAdd }: AddCategoryButtonProps) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await onAdd(name.trim());
+    setName("");
+    setSaving(false);
+    setOpen(false);
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-sm text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-medium"
+      >
+        <Plus className="w-4 h-4" /> Legg til
+      </button>
+      {open && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
+            <h3 className="font-semibold">Ny kategori</h3>
+            <input
+              required
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Kategorinavn (f.eks. Pålegg)"
+              className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {saving ? "Legger til…" : "Legg til"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Avbryt
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Edit category modal ───────────────────────────────────────────────────────
+
+interface EditCategoryModalProps {
+  category: ShoppingCategory;
+  onSave: (name: string) => Promise<void>;
+  onClose: () => void;
+}
+
+function EditCategoryModal({ category, onSave, onClose }: EditCategoryModalProps) {
+  const [name, setName] = useState(category.name);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSave(name.trim());
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
+        <h3 className="font-semibold">Gi nytt navn</h3>
+        <input
+          required
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Kategorinavn"
+          className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
+        />
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-60"
+          >
+            {saving ? "Lagrer…" : "Lagre"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 py-2.5 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
+            Avbryt
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }

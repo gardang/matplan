@@ -24,5 +24,10 @@ id UUID PK · item_name TEXT · normalized_name TEXT (unique index on lower) · 
 ## chat_messages
 id UUID PK · plan_id FK→meal_plans SET NULL · role TEXT (user/assistant) · content TEXT · created_at
 
+## shopping_categories
+id UUID PK · name TEXT (UNIQUE) · sort_order INT · active BOOL default true · created_at
+Managed via Settings UI. Source of truth for shopping list categories (replaces hardcoded CATEGORIES constant).
+API: GET/POST/PUT/DELETE /api/settings/categories
+
 ## Real-time enabled on: shopping_items, meals
 ## RLS: public read/write on all tables (no auth in v1)

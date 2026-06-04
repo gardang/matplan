@@ -114,6 +114,14 @@ create table if not exists app_settings (
   updated_at timestamptz default now()
 );
 
+create table if not exists shopping_categories (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null unique,
+  sort_order integer not null default 0,
+  active     boolean default true,
+  created_at timestamptz default now()
+);
+
 
 -- ── Indexes ───────────────────────────────────────────────────
 create index if not exists meals_plan_id_idx          on meals (plan_id);
@@ -133,15 +141,16 @@ alter publication supabase_realtime add table shopping_items;
 -- v1: public read/write — no auth required.
 -- Replace with proper policies when auth is added.
 
-alter table meal_plans         enable row level security;
-alter table meals              enable row level security;
-alter table shopping_items     enable row level security;
-alter table family_members     enable row level security;
-alter table family_preferences enable row level security;
-alter table meal_ratings       enable row level security;
-alter table shopping_patterns  enable row level security;
-alter table chat_messages      enable row level security;
-alter table app_settings       enable row level security;
+alter table meal_plans          enable row level security;
+alter table meals               enable row level security;
+alter table shopping_items      enable row level security;
+alter table family_members      enable row level security;
+alter table family_preferences  enable row level security;
+alter table meal_ratings        enable row level security;
+alter table shopping_patterns   enable row level security;
+alter table chat_messages       enable row level security;
+alter table app_settings        enable row level security;
+alter table shopping_categories enable row level security;
 
 -- Public access policies (anon + authenticated)
 do $$
@@ -151,7 +160,7 @@ begin
   foreach t in array array[
     'meal_plans', 'meals', 'shopping_items', 'family_members',
     'family_preferences', 'meal_ratings', 'shopping_patterns',
-    'chat_messages', 'app_settings'
+    'chat_messages', 'app_settings', 'shopping_categories'
   ] loop
     execute format(
       'create policy "public_all_%s" on %I for all to anon, authenticated using (true) with check (true)',
@@ -242,9 +251,27 @@ language sql as $$
     and  for_day       is not null;
 $$;
 
+-- ── Shopping categories ───────────────────────────────────────
+insert into shopping_categories (name, sort_order, active) values
+  ('Grønnsaker og frukt',  1,  true),
+  ('Kjøtt og fisk',        2,  true),
+  ('Meieri og egg',        3,  true),
+  ('Pålegg',               4,  true),
+  ('Brød og bakevarer',    5,  true),
+  ('Tørrvarer',            6,  true),
+  ('Frysevarer',           7,  true),
+  ('Krydder og sauser',    8,  true),
+  ('Hermetikk',            9,  true),
+  ('Drikke',               10, true),
+  ('Snacks og godteri',    11, true),
+  ('Rengjøring',           12, true),
+  ('Annet',                13, true)
+on conflict (name) do nothing;
+
+
 -- ── Done ─────────────────────────────────────────────────────
 -- Seeded: 6 family members, 12 preferences, 2 app settings, 11 meal ratings,
---         7 weekly shopping patterns.
+--         7 weekly shopping patterns, 13 shopping categories.
 -- meal_plans / meals / shopping_items: not seeded (transient planning data).
 -- meals.ai_recipe (jsonb) stores AI-generated recipes when recipe_mode='ai'.
 -- Functions: reorder_shopping_for_day — atomic for_day remap on meal reorder.

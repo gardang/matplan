@@ -108,6 +108,14 @@ export interface ChatMessage {
   created_at: string;
 }
 
+export interface ShoppingCategory {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+}
+
 // UI-only types
 
 export interface MergedItem {

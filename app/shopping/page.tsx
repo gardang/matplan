@@ -6,6 +6,7 @@ import { ShoppingCart, Plus, RefreshCw, CheckCheck } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { normalizeItemName, normalizeQuantity, mergeQuantities, sortKey } from "@/lib/normalize";
 import { CATEGORIES } from "@/lib/constants";
+import type { ShoppingCategory } from "@/lib/types";
 import { ShopItem } from "@/components/ShopItem";
 import { useToast } from "@/components/Toast";
 import type { ShoppingItem, MergedItem, Meal } from "@/lib/types";
@@ -24,6 +25,7 @@ function ShoppingPageInner() {
   const [planId, setPlanId] = useState<string | null>(null);
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [meals, setMeals] = useState<Meal[]>([]);
+  const [categories, setCategories] = useState<string[]>(CATEGORIES as unknown as string[]);
   const [loading, setLoading] = useState(true);
   // Initialize synchronously so the banner appears immediately on mount/navigation
   const [backgroundGenerating, setBackgroundGenerating] = useState(() =>
@@ -100,13 +102,18 @@ function ShoppingPageInner() {
         !!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId")
       );
 
-      const [itemsRes, mealsRes] = await Promise.all([
+      const [itemsRes, mealsRes, categoriesRes] = await Promise.all([
         fetch(`/api/shopping?plan_id=${plan.id}`),
         fetch(`/api/meals?plan_id=${plan.id}`),
+        fetch("/api/settings/categories"),
       ]);
 
       let itemsData: ShoppingItem[] = await itemsRes.json();
       const mealsData: Meal[] = await mealsRes.json();
+      const categoriesData: ShoppingCategory[] = await categoriesRes.json();
+      if (Array.isArray(categoriesData) && categoriesData.length > 0) {
+        setCategories(categoriesData.filter((c) => c.active).map((c) => c.name));
+      }
 
       // If a meal reorder completed while we were fetching (race condition), re-fetch items
       // so we get the updated for_day values. The flag is set by handleDragEnd in plan/page.tsx.
@@ -351,7 +358,7 @@ function ShoppingPageInner() {
         </div>
       ) : (
         <div className="space-y-4">
-          {CATEGORIES.map((cat) => {
+          {categories.map((cat) => {
             const catItems = groups[cat];
             if (!catItems || catItems.length === 0) return null;
             return (
@@ -399,6 +406,7 @@ function ShoppingPageInner() {
 
       {addModalOpen && (
         <AddItemModal
+          categories={categories}
           onAdd={async (name, quantity, category) => {
             await handleAddItem(name, quantity, category);
             setAddModalOpen(false);
@@ -413,15 +421,18 @@ function ShoppingPageInner() {
 // ── Add item modal ────────────────────────────────────────────────────────────
 
 function AddItemModal({
+  categories,
   onAdd,
   onClose,
 }: {
+  categories: string[];
   onAdd: (name: string, quantity: string, category: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const defaultCat = categories.includes("Annet") ? "Annet" : (categories[0] ?? "Annet");
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState("");
-  const [category, setCategory] = useState("Annet");
+  const [category, setCategory] = useState(defaultCat);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -458,7 +469,7 @@ function AddItemModal({
           onChange={(e) => setCategory(e.target.value)}
           className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100"
         >
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
