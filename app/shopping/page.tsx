@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { ShoppingCart, Plus, RefreshCw, CheckCheck } from "lucide-react";
+import { ShoppingCart, Plus, RefreshCw, CheckCheck, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { normalizeItemName, normalizeQuantity, mergeQuantities, sortKey } from "@/lib/normalize";
 import { CATEGORIES } from "@/lib/constants";
@@ -34,6 +34,7 @@ function ShoppingPageInner() {
     (!!localStorage.getItem("generatingPlanId") || !!localStorage.getItem("regeneratingPlanId"))
   );
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const { showToast, ToastContainer } = useToast();
 
   // Refs so event handlers can read current values without stale closures
@@ -341,6 +342,28 @@ function ShoppingPageInner() {
     }
   }
 
+  function toggleCollapse(cat: string) {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  }
+
+  async function handleGroupToggle(catItems: MergedItem[]) {
+    const allChecked = catItems.every((item) => item.checkedArr.every(Boolean));
+    const newChecked = !allChecked;
+    const allIds = catItems.flatMap((item) => item.ids);
+    await fetch("/api/shopping", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: allIds, checked: newChecked }),
+    });
+    setItems((prev) =>
+      prev.map((i) => allIds.includes(i.id) ? { ...i, checked: newChecked } : i)
+    );
+  }
+
   if (loading) return null; // Suspense fallback handles the skeleton
 
   const groups = buildMergedGroups();
@@ -397,24 +420,61 @@ function ShoppingPageInner() {
           {categories.map((cat) => {
             const catItems = groups[cat];
             if (!catItems || catItems.length === 0) return null;
+            const collapsed = collapsedCategories.has(cat);
+            const allChecked = catItems.every((item) => item.checkedArr.every(Boolean));
+            const someChecked = !allChecked && catItems.some((item) => item.checkedArr.some(Boolean));
+            const checkedInCat = catItems.reduce((n, item) => n + item.checkedArr.filter(Boolean).length, 0);
+            const totalInCat = catItems.reduce((n, item) => n + item.ids.length, 0);
             return (
               <div key={cat}>
-                <div className="text-xs uppercase tracking-wider text-gray-400 font-medium mb-2">
-                  {cat}
+                {/* Category header row */}
+                <div className="flex items-center gap-2 mb-1 select-none">
+                  {/* Group checkbox */}
+                  <button
+                    onClick={() => handleGroupToggle(catItems)}
+                    className="flex items-center justify-center w-5 h-5 rounded border-2 shrink-0 transition-colors
+                      border-gray-300 dark:border-gray-600
+                      data-[all]:border-emerald-500 data-[all]:bg-emerald-500
+                      data-[some]:border-emerald-400 data-[some]:bg-emerald-100 dark:data-[some]:bg-emerald-900/40"
+                    data-all={allChecked ? "" : undefined}
+                    data-some={someChecked ? "" : undefined}
+                    title={allChecked ? "Fjern avkrysning for hele kategorien" : "Kryss av hele kategorien"}
+                  >
+                    {allChecked && <span className="text-white text-xs font-bold leading-none">✓</span>}
+                    {someChecked && <span className="text-emerald-500 text-xs font-bold leading-none">−</span>}
+                  </button>
+
+                  {/* Collapse toggle + label */}
+                  <button
+                    onClick={() => toggleCollapse(cat)}
+                    className="flex items-center gap-1 flex-1 text-left"
+                  >
+                    <span className="text-xs uppercase tracking-wider text-gray-400 font-medium">{cat}</span>
+                    <span className="text-xs text-gray-400 ml-1">({checkedInCat}/{totalInCat})</span>
+                    <span className="ml-auto text-gray-400">
+                      {collapsed
+                        ? <ChevronRight className="w-3.5 h-3.5" />
+                        : <ChevronDown className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
                 </div>
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
-                  {catItems.map((item) => (
-                    <ShopItem
-                      key={item.ids.join("-")}
-                      item={item}
-                      categories={categories}
-                      mealRecipeUrls={mealRecipeUrls}
-                      onToggle={() => handleToggle(item)}
-                      onEdit={(name, qty, cat) => handleEdit(item, name, qty, cat)}
-                      onDelete={() => handleDelete(item)}
-                    />
-                  ))}
-                </div>
+
+                {/* Items */}
+                {!collapsed && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+                    {catItems.map((item) => (
+                      <ShopItem
+                        key={item.ids.join("-")}
+                        item={item}
+                        categories={categories}
+                        mealRecipeUrls={mealRecipeUrls}
+                        onToggle={() => handleToggle(item)}
+                        onEdit={(name, qty, c) => handleEdit(item, name, qty, c)}
+                        onDelete={() => handleDelete(item)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
