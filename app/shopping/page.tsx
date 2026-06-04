@@ -35,7 +35,10 @@ function ShoppingPageInner() {
   );
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
-  const { showToast, ToastContainer } = useToast();
+  const { showToast, dismissToast, ToastContainer } = useToast();
+
+  // Pending soft-deletes: item removed from UI immediately, API DELETE fires after 10s
+  const pendingDeletesRef = useRef<Map<string, { items: ShoppingItem[]; timerId: ReturnType<typeof setTimeout>; toastId: number }>>(new Map());
 
   // Refs so event handlers can read current values without stale closures
   const bgGeneratingRef = useRef(
@@ -270,11 +273,46 @@ function ShoppingPageInner() {
     );
   }
 
-  async function handleDelete(item: MergedItem) {
-    for (const id of item.ids) {
-      await fetch(`/api/shopping?id=${id}`, { method: "DELETE" });
+  function handleDelete(item: MergedItem) {
+    const key = item.ids.join(",");
+
+    // Cancel any existing pending delete for the same item (edge case: double-tap)
+    const existing = pendingDeletesRef.current.get(key);
+    if (existing) {
+      clearTimeout(existing.timerId);
+      dismissToast(existing.toastId);
+      pendingDeletesRef.current.delete(key);
     }
+
+    // Snapshot the raw rows before removing them from UI
+    const snapshot = items.filter((i) => item.ids.includes(i.id));
     setItems((prev) => prev.filter((i) => !item.ids.includes(i.id)));
+
+    // Timer fires after 10s → actually DELETE from Supabase
+    let toastId: number;
+    const timerId = setTimeout(async () => {
+      pendingDeletesRef.current.delete(key);
+      dismissToast(toastId);
+      for (const id of item.ids) {
+        await fetch(`/api/shopping?id=${id}`, { method: "DELETE" });
+      }
+    }, 10000);
+
+    toastId = showToast(
+      `«${item.name}» slettet`,
+      "loading",
+      undefined,
+      {
+        label: "Angre",
+        onClick: () => {
+          clearTimeout(timerId);
+          pendingDeletesRef.current.delete(key);
+          setItems((prev) => [...prev, ...snapshot]);
+        },
+      }
+    );
+
+    pendingDeletesRef.current.set(key, { items: snapshot, timerId, toastId });
   }
 
   async function handleAddItem(name: string, quantity: string, category: string) {

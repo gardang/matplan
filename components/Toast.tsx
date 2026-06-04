@@ -10,14 +10,20 @@ interface ToastLink {
   href: string;
 }
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastProps {
   message: string;
   type: ToastType;
   onDismiss: () => void;
   link?: ToastLink;
+  action?: ToastAction;
 }
 
-export function Toast({ message, type, onDismiss, link }: ToastProps) {
+export function Toast({ message, type, onDismiss, link, action }: ToastProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -44,7 +50,7 @@ export function Toast({ message, type, onDismiss, link }: ToastProps) {
         visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2"
       }`}
     >
-      {type === "loading" && (
+      {type === "loading" && !action && (
         <span className="flex gap-1">
           {[0, 150, 300].map((d) => (
             <span
@@ -66,6 +72,14 @@ export function Toast({ message, type, onDismiss, link }: ToastProps) {
           {link.label}
         </a>
       )}
+      {action && (
+        <button
+          onClick={() => { action.onClick(); onDismiss(); }}
+          className="shrink-0 underline underline-offset-2 whitespace-nowrap font-semibold hover:opacity-80"
+        >
+          {action.label}
+        </button>
+      )}
       {type !== "loading" && (
         <button onClick={onDismiss} className="shrink-0 opacity-70 hover:opacity-100">
           <X className="w-4 h-4" />
@@ -82,6 +96,7 @@ interface ToastState {
   message: string;
   type: ToastType;
   link?: ToastLink;
+  action?: ToastAction;
 }
 
 let nextId = 0;
@@ -89,9 +104,9 @@ let nextId = 0;
 export function useToast() {
   const [toasts, setToasts] = useState<ToastState[]>([]);
 
-  function showToast(message: string, type: ToastType = "success", link?: ToastLink) {
+  function showToast(message: string, type: ToastType = "success", link?: ToastLink, action?: ToastAction) {
     const id = ++nextId;
-    setToasts((prev) => [...prev, { id, message, type, link }]);
+    setToasts((prev) => [...prev, { id, message, type, link, action }]);
     return id;
   }
 
@@ -103,7 +118,7 @@ export function useToast() {
     return (
       <>
         {toasts.map((t) => (
-          <Toast key={t.id} message={t.message} type={t.type} link={t.link} onDismiss={() => dismissToast(t.id)} />
+          <Toast key={t.id} message={t.message} type={t.type} link={t.link} action={t.action} onDismiss={() => dismissToast(t.id)} />
         ))}
       </>
     );
