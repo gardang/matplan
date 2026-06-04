@@ -38,7 +38,7 @@ export function TabNav() {
       </nav>
 
       {/* Desktop top nav */}
-      <nav className="hidden lg:flex sticky top-0 z-50 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 h-14 items-center gap-1">
+      <nav className="hidden lg:flex fixed top-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-6 h-14 items-center gap-1">
         <span className="font-semibold text-emerald-600 mr-6 text-base">🥘 Matplan</span>
         {tabs.map(({ href, label, Icon }) => {
           const active = pathname.startsWith(href);

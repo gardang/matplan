@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={`${inter.className} h-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased`}
       >
         <TabNav />
-        <main className="max-w-2xl mx-auto px-4 pt-4 pb-24 lg:pb-8 lg:pt-6">
+        <main className="max-w-2xl mx-auto px-4 pt-4 pb-24 lg:pb-8 lg:pt-20">
           {children}
         </main>
       </body>
