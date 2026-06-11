@@ -4,6 +4,7 @@
 import { createServerClient } from "./supabase-server";
 import { toLocalDateString } from "./normalize";
 import { DAY_LABELS_LONG, CATEGORIES } from "./constants";
+import { getWeeklyBudget } from "./app-settings";
 
 const BASE_PROMPT_HEAD = `Du er en hjelpsomme matplanlegger for familien Ellefsen i Lillestrøm, Norge.
 Du hjelper med å planlegge middager, generere handlelister og svare på spørsmål om mat og oppskrifter.
@@ -27,6 +28,7 @@ export async function buildSystemPrompt(
   dateTo?: string
 ): Promise<string> {
   const supabase = createServerClient();
+  const weeklyBudget = await getWeeklyBudget();
 
   // ── Shopping categories (dynamic from DB) ────────────────────────────────
   const { data: catRows } = await supabase
@@ -195,7 +197,7 @@ export async function buildSystemPrompt(
         })
         .join("\n");
       sections.push(
-        `## Reelle handlevaner (fra kvitteringer)\nDisse tallene er hentet fra familiens faktiske butikkkvitteringer. Bruk dem til å foreslå riktige mengder og realistiske kostnadsestimater (ukesbudsjett: 4000 kr):\n${lines}`
+        `## Reelle handlevaner (fra kvitteringer)\nDisse tallene er hentet fra familiens faktiske butikkkvitteringer. Bruk dem til å foreslå riktige mengder og realistiske kostnadsestimater (ukesbudsjett: ${weeklyBudget} kr):\n${lines}`
       );
     }
   }

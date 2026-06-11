@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp, PackageSearch, X, Store } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp, PackageSearch, X, Store, Wallet } from "lucide-react";
 import { useToast } from "@/components/Toast";
 import { StoreConnections } from "@/components/StoreConnections";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
@@ -15,6 +15,8 @@ export default function SettingsPage() {
   const [savingModel, setSavingModel] = useState(false);
   const [recipeMode, setRecipeMode] = useState<"external" | "ai">("external");
   const [savingRecipeMode, setSavingRecipeMode] = useState(false);
+  const [weeklyBudget, setWeeklyBudget] = useState("");
+  const [savingBudget, setSavingBudget] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editingMember, setEditingMember] = useState<FamilyMember | null>(null);
   const [editingPref, setEditingPref] = useState<FamilyPreference | null>(null);
@@ -55,6 +57,39 @@ export default function SettingsPage() {
       .catch(() => showToast("Kunne ikke laste innstillinger", "error"))
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetch("/api/settings/budget")
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.budget === "number") setWeeklyBudget(String(d.budget));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleBudgetSave() {
+    const value = Number(weeklyBudget);
+    if (!Number.isFinite(value) || value <= 0) {
+      showToast("Ugyldig budsjett", "error");
+      return;
+    }
+    setSavingBudget(true);
+    try {
+      const res = await fetch("/api/settings/budget", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ budget: value }),
+      });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      setWeeklyBudget(String(d.budget));
+      showToast("Budsjett lagret", "success");
+    } catch {
+      showToast("Kunne ikke lagre budsjett", "error");
+    } finally {
+      setSavingBudget(false);
+    }
+  }
 
   async function handleRecipeModeChange(mode: "external" | "ai") {
     setSavingRecipeMode(true);
@@ -319,6 +354,32 @@ export default function SettingsPage() {
               </button>
             );
           })}
+        </div>
+      </CollapsibleSection>
+
+      {/* Weekly budget */}
+      <CollapsibleSection icon={<Wallet className="w-4 h-4" />} title="Ukesbudsjett">
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 space-y-2">
+          <p className="text-xs text-gray-400">
+            Brukes i Innsikt-fanen og når AI-en estimerer kostnader. Inkluderer alle dagligvarer.
+          </p>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              inputMode="numeric"
+              value={weeklyBudget}
+              onChange={(e) => setWeeklyBudget(e.target.value)}
+              className="w-32 text-sm px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <span className="text-sm text-gray-500 dark:text-gray-400">NOK / uke</span>
+            <button
+              onClick={handleBudgetSave}
+              disabled={savingBudget}
+              className="ml-auto px-4 py-2 text-sm font-medium bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+            >
+              Lagre
+            </button>
+          </div>
         </div>
       </CollapsibleSection>
 

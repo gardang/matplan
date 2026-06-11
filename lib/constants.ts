@@ -21,6 +21,8 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 
 export const DEFAULT_MODEL = "claude-sonnet-4-6";
 
+export const DEFAULT_WEEKLY_BUDGET = 4000; // NOK; overridable via app_settings 'weekly_budget'
+
 // ── Shopping categories — used for grouping and AI prompts ────────────────────
 export const CATEGORIES = [
   "Grønnsaker og frukt",

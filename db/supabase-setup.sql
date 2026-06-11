@@ -173,8 +173,9 @@ end $$;
 
 -- ── App settings ─────────────────────────────────────────────
 insert into app_settings (key, value, updated_at) values
-  ('model',       'claude-sonnet-4-6', now()),
-  ('recipe_mode', 'ai',                now())
+  ('model',         'claude-sonnet-4-6', now()),
+  ('recipe_mode',   'ai',                now()),
+  ('weekly_budget', '4000',              now())
 on conflict (key) do update set value = excluded.value, updated_at = now();
 
 

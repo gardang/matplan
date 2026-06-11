@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart3, TrendingUp, Receipt, Coins, Store } from "lucide-react";
 
-const WEEKLY_BUDGET = 4000;
+const FALLBACK_BUDGET = 4000;
 
 interface WeekSpend {
   weekStart: string;
@@ -39,6 +39,7 @@ interface Insights {
   topItems: TopItem[];
   year: number | null;
   availableYears: number[];
+  weeklyBudget: number;
 }
 
 const PERIODS = [
@@ -85,7 +86,8 @@ export default function InsightsPage() {
   }, [months, selectedYear]);
 
   const weeks = data?.weeklySpend ?? [];
-  const maxWeek = Math.max(WEEKLY_BUDGET, ...weeks.map((w) => w.total));
+  const budget = data?.weeklyBudget ?? FALLBACK_BUDGET;
+  const maxWeek = Math.max(budget, ...weeks.map((w) => w.total));
   // Average over completed weeks (exclude current, possibly partial, week)
   const completedWeeks = weeks.length > 1 ? weeks.slice(0, -1) : weeks;
   const avgPerWeek =
@@ -168,11 +170,11 @@ export default function InsightsPage() {
               label="Snitt per uke"
               value={nok(avgPerWeek)}
               sub={
-                avgPerWeek > WEEKLY_BUDGET
-                  ? `${nok(avgPerWeek - WEEKLY_BUDGET)} over budsjett`
-                  : `${nok(WEEKLY_BUDGET - avgPerWeek)} under budsjett`
+                avgPerWeek > budget
+                  ? `${nok(avgPerWeek - budget)} over budsjett`
+                  : `${nok(budget - avgPerWeek)} under budsjett`
               }
-              warn={avgPerWeek > WEEKLY_BUDGET}
+              warn={avgPerWeek > budget}
             />
             <SummaryCard
               icon={<Receipt className="w-4 h-4" />}
@@ -189,11 +191,11 @@ export default function InsightsPage() {
           {/* Weekly spend bars */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 space-y-3">
             <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-              Forbruk per uke <span className="text-xs font-normal text-gray-400">(budsjett {nok(WEEKLY_BUDGET)})</span>
+              Forbruk per uke <span className="text-xs font-normal text-gray-400">(budsjett {nok(budget)})</span>
             </h2>
             <div className="space-y-1.5">
               {weeks.map((w) => {
-                const over = w.total > WEEKLY_BUDGET;
+                const over = w.total > budget;
                 const width = Math.max(2, (w.total / maxWeek) * 100);
                 const d = new Date(w.weekStart + "T12:00:00");
                 const label = `${d.getDate()}.${d.getMonth() + 1}`;
@@ -208,7 +210,7 @@ export default function InsightsPage() {
                       {/* budget marker */}
                       <div
                         className="absolute top-0 bottom-0 w-px bg-gray-400 dark:bg-gray-500"
-                        style={{ left: `${(WEEKLY_BUDGET / maxWeek) * 100}%` }}
+                        style={{ left: `${(budget / maxWeek) * 100}%` }}
                       />
                     </div>
                     <span className="text-[10px] text-gray-500 dark:text-gray-400 w-14 shrink-0">{nok(w.total)}</span>

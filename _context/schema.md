@@ -45,5 +45,8 @@ id UUID PK · name TEXT (UNIQUE) · sort_order INT · active BOOL default true �
 Managed via Settings UI. Source of truth for shopping list categories (replaces hardcoded CATEGORIES constant).
 API: GET/POST/PUT/DELETE /api/settings/categories
 
+## app_settings
+key TEXT PK · value TEXT · updated_at — key/value store. Keys: `model`, `recipe_mode`, `weekly_budget` (NOK, default 4000). Helpers in lib/app-settings.ts; APIs under /api/settings/*.
+
 ## Real-time enabled on: shopping_items, meals
 ## RLS: public read/write on all tables (no auth in v1)

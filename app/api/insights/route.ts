@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@/lib/supabase-server";
 import { toLocalDateString } from "@/lib/normalize";
+import { getWeeklyBudget } from "@/lib/app-settings";
 
 interface WeekSpend {
   weekStart: string;
@@ -154,6 +155,7 @@ export async function GET(request: NextRequest) {
       months,
       year: year ? Number(year) : null,
       availableYears,
+      weeklyBudget: await getWeeklyBudget(),
       receiptCount: (receipts ?? []).length,
       totalSpent: Number(totalSpent.toFixed(2)),
       totalBonus: Number(totalBonus.toFixed(2)),

@@ -163,6 +163,27 @@ multi-tenant token vaults, refresh daemons, or proxy infra for ~6 users.
 - Phase 2 trigger: is the family value real enough, and are enough people asking,
   to justify the native-app + legal investment? Revisit when that's clearer.
 
+## Deferred / later-stage ideas
+
+**Make the budget actually functional (not just advisory).** As of 2026-06-11 the
+weekly budget is only a soft hint in the meal-generator prompt + a retrospective
+actual-vs-budget view in Innsikt. Nothing prices a *planned* basket or enforces
+the budget. Now that receipts give real per-item prices, the meaningful version:
+- Tag each shopping-list item with an estimated price from receipt-learned
+  `shopping_patterns.avg_price` (fall back to "ukjent pris" when no history).
+- Sum the list → show a live "estimert total ~X kr / budsjett Y kr" on the
+  shopping page, flag over-budget and the biggest cost drivers.
+- Optionally feed the running estimate back to the generator so it can trade
+  items down when a week trends over budget.
+- Estimate sharpens as more receipts sync. (Needs a price/estimate on
+  shopping_items or a join to shopping_patterns.)
+
+**Always-on budget line in the system prompt (small).** Today the budget number
+only reaches the AI via the receipt-habits section (conditional on receipt data).
+Add an unconditional "## Ukesbudsjett: ca X kr" line in buildSystemPrompt from
+getWeeklyBudget() so the generator always knows the target. Cheap; makes the AI
+*aware* but still doesn't *enforce* — the basket-pricing item above is the real fix.
+
 ## Sources
 - Optius terms: https://optius.app/no-NO/terms-of-use
 - Trumf SSO entry: https://oauth.norgesgruppen.no/login/trumf

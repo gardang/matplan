@@ -7,6 +7,7 @@ Built with Next.js 14, TypeScript, Tailwind CSS, Supabase, and Claude API.
 
 ```
 CLAUDE.md          ← You are here. Read this first, every time.
+IDEAS.md           ← Future ideas / backlog. "Add to ideas" → append here; "what's on the plan" → read here.
 _context/          ← HOW the system works. Stable architecture and rules.
   conventions.md      Code standards, naming, file organization
   design-system.md    Visual rules: colors, typography, components, responsive
@@ -50,6 +51,7 @@ All family data (members, preferences, meal ratings, shopping patterns, staples)
 - Claude API: always `max_tokens: 8000`, model `claude-sonnet-4-6`
 - Read `_context/conventions.md` for naming and code standards
 - **Git: commit ONLY when Gard explicitly asks — never automatically or unprompted.** Commit style: imperative mood, lowercase (e.g. `add meal rating buttons`).
+- **Ideas / backlog:** future ideas and deferred work live in `IDEAS.md` (repo root). When Gard says "add … to ideas" / "put that on the list", append it there under the right heading. When he asks "what ideas are on the plan" / "what's next", read and summarize `IDEAS.md`. Keep deep technical research in its own docs and link from `IDEAS.md`.
 - **Receipt / store integration:** before changing store auth or the receipt-fetch approach, read `skills/receipts/store-integration-research.md` — it records why the current design (token paste, personal use) is what it is, how Trumf/Optius work, the no-credentials constraint, and the productization roadmap.
 
 ## Database Migration Rule
