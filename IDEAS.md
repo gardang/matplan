@@ -43,10 +43,24 @@ them once shipped.
   receipt date and total count per store.
 - **Friendly chain names** `(idea)` — map raw `partnerId` codes to display names
   (JOK→Joker, NG→NorgesGruppen, …) in Innsikt, fallback to the raw code.
+- **Manual product-mapping correction UI** `(idea)` — Settings UI to edit
+  `product_mappings` (raw receipt text → clean item name + category). Manual
+  entries already override the AI mapping (`source='manual'`); this is the
+  missing UI to fix a mis-mapped item once so it sticks. Main lever for going
+  from "decent" to "accurate" auto-lists.
 - **Coop (Obs) integration** `(idea)` — Auth0/OIDC + api.coop.no. Spec in the
   research doc.
 - **Rema (Æ) integration** `(idea)` — OAuth2+PKCE + api.rema.no. Spec in the
   research doc.
+
+## Learning / patterns
+
+- **Reconcile app-checkout vs receipt learning** `(idea)` — two paths write
+  `shopping_patterns`: "handletur ferdig" increments `times_bought` per checkout,
+  and receipt sync recomputes from `receipt_items`. They use `max()` so nothing
+  doubles, but they overwrite each other's `avg_quantity`/`last_bought` and aren't
+  cleanly merged. Make receipts the source of truth for frequency/quantity/price;
+  demote checkout learning to a fallback for items with no receipt history.
 
 ## Productization (only if turning this into a product)
 
