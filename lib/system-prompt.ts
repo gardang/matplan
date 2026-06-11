@@ -158,7 +158,7 @@ export async function buildSystemPrompt(
   // ── Shopping patterns (≥3 purchases) ──────────────────────────────────────
   const { data: patterns } = await supabase
     .from("shopping_patterns")
-    .select("item_name, avg_quantity, typical_frequency")
+    .select("item_name, avg_quantity, typical_frequency, avg_price, buys_per_month, pattern_source")
     .gte("times_bought", 3);
 
   if (patterns && patterns.length > 0) {
@@ -175,6 +175,28 @@ export async function buildSystemPrompt(
     if (other.length > 0) {
       const lines = other.map((p) => `- ${p.item_name}: ${p.avg_quantity}${p.typical_frequency ? ` (${p.typical_frequency})` : ""}`).join("\n");
       sections.push(`## Typiske handlekvantumet\n${lines}`);
+    }
+
+    // Receipt-learned habits: real frequency and price from synced receipts
+    const receiptLearned = patterns.filter(
+      (p) =>
+        (p.pattern_source === "receipt" || p.pattern_source === "both") &&
+        (p.buys_per_month !== null || p.avg_price !== null)
+    );
+    if (receiptLearned.length > 0) {
+      const lines = receiptLearned
+        .sort((a, b) => (b.buys_per_month ?? 0) - (a.buys_per_month ?? 0))
+        .slice(0, 40)
+        .map((p) => {
+          const parts: string[] = [];
+          if (p.buys_per_month !== null) parts.push(`kjøpes ~${p.buys_per_month}×/mnd`);
+          if (p.avg_price !== null) parts.push(`~${p.avg_price} kr/kjøp`);
+          return `- ${p.item_name}: ${parts.join(", ")}`;
+        })
+        .join("\n");
+      sections.push(
+        `## Reelle handlevaner (fra kvitteringer)\nDisse tallene er hentet fra familiens faktiske butikkkvitteringer. Bruk dem til å foreslå riktige mengder og realistiske kostnadsestimater (ukesbudsjett: 4000 kr):\n${lines}`
+      );
     }
   }
 

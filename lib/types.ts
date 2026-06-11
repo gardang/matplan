@@ -98,6 +98,61 @@ export interface ShoppingPattern {
   category: string | null;
   category_override: string | null;
   typical_frequency: "weekly" | "biweekly" | "monthly" | "occasional" | null;
+  avg_price: number | null;
+  last_price: number | null;
+  buys_per_month: number | null;
+  pattern_source: "app" | "receipt" | "both";
+  updated_at: string;
+}
+
+export type StoreId = "trumf" | "coop" | "rema";
+
+export interface StoreConnection {
+  id: string;
+  store: StoreId;
+  access_token: string | null;
+  token_expires_at: string | null;
+  last_sync_at: string | null;
+  status: "connected" | "expired" | "error" | "disconnected";
+  status_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Receipt {
+  id: string;
+  store: StoreId;
+  external_id: string;
+  chain: string | null;
+  store_name: string | null;
+  purchase_date: string;
+  total_amount: number | null;
+  bonus_amount: number | null;
+  created_at: string;
+}
+
+export interface ReceiptItem {
+  id: string;
+  receipt_id: string;
+  ean: string | null;
+  product_text: string;
+  normalized_name: string | null;
+  quantity: number;
+  unit: string | null;
+  total_price: number | null;
+  unit_price: number | null;
+  discount: number | null;
+  created_at: string;
+}
+
+export interface ProductMapping {
+  id: string;
+  ean: string | null;
+  match_text: string;
+  item_name: string;
+  category: string | null;
+  source: "ai" | "manual";
+  created_at: string;
   updated_at: string;
 }
 

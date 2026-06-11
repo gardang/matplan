@@ -49,6 +49,8 @@ All family data (members, preferences, meal ratings, shopping patterns, staples)
 - Never use `toISOString()` for dates — use `getFullYear()`, `getMonth()`, `getDate()`
 - Claude API: always `max_tokens: 8000`, model `claude-sonnet-4-6`
 - Read `_context/conventions.md` for naming and code standards
+- **Git: commit ONLY when Gard explicitly asks — never automatically or unprompted.** Commit style: imperative mood, lowercase (e.g. `add meal rating buttons`).
+- **Receipt / store integration:** before changing store auth or the receipt-fetch approach, read `skills/receipts/store-integration-research.md` — it records why the current design (token paste, personal use) is what it is, how Trumf/Optius work, the no-credentials constraint, and the productization roadmap.
 
 ## Database Migration Rule
 

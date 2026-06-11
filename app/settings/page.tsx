@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp, PackageSearch, X } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Bot, Pencil, BookOpen, CalendarDays, ChevronDown, Star, Tag, ChevronUp, PackageSearch, X, Store } from "lucide-react";
 import { useToast } from "@/components/Toast";
+import { StoreConnections } from "@/components/StoreConnections";
 import { AVAILABLE_MODELS, DEFAULT_MODEL } from "@/lib/constants";
 import type { FamilyMember, FamilyPreference, MealPlan, MealRating, ShoppingCategory, ShoppingPattern } from "@/lib/types";
 
@@ -684,6 +685,11 @@ export default function SettingsPage() {
             onClose={() => setEditingRating(null)}
           />
         )}
+      </CollapsibleSection>
+
+      {/* Store connections (receipt sync) */}
+      <CollapsibleSection icon={<Store className="w-4 h-4" />} title="Butikker">
+        <StoreConnections showToast={showToast} />
       </CollapsibleSection>
     </div>
   );

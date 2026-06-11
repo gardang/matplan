@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, ShoppingCart, MessageCircle, Settings } from "lucide-react";
+import { CalendarDays, ShoppingCart, MessageCircle, Settings, BarChart3 } from "lucide-react";
 
 const tabs = [
   { href: "/plan", label: "Plan", Icon: CalendarDays },
   { href: "/shopping", label: "Handle", Icon: ShoppingCart },
+  { href: "/innsikt", label: "Innsikt", Icon: BarChart3 },
   { href: "/chat", label: "Chat", Icon: MessageCircle },
   { href: "/settings", label: "Innstillinger", Icon: Settings },
 ];
