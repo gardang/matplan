@@ -295,6 +295,18 @@ export default function SettingsPage() {
     }
   }
 
+  async function setStapleOverride(pattern: ShoppingPattern, staple_override: boolean | null) {
+    const res = await fetch("/api/shopping/patterns", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: pattern.id, staple_override }),
+    });
+    if (res.ok) {
+      const updated: ShoppingPattern = await res.json();
+      setPatterns((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    }
+  }
+
   const PREF_LABELS: Record<string, string> = {
     dislikes: "Liker ikke",
     never_use: "Aldri",
@@ -555,6 +567,58 @@ export default function SettingsPage() {
               </div>
             ) : (
               <p className="text-sm text-gray-400">Ingen overstyringer ennå. Endre kategori på en vare i handlelisten for å opprette en.</p>
+            )}
+          </CollapsibleSection>
+        );
+      })()}
+
+      {/* Staples */}
+      {(() => {
+        const known = patterns.filter((p) => (p.times_bought ?? 0) >= 3);
+        const effStaple = (p: ShoppingPattern) => (p.staple_override ?? p.is_staple) === true;
+        const stapleCount = known.filter(effStaple).length;
+        return (
+          <CollapsibleSection
+            icon={<PackageSearch className="w-4 h-4" />}
+            title="Faste varer"
+            badge={stapleCount > 0 ? String(stapleCount) : undefined}
+          >
+            <p className="text-xs text-gray-400">
+              Faste varer legges alltid i handlelisten, uansett middager (melk, brød, pålegg). Andre varer kommer kun med når en middag krever dem. ✓ = fast vare. Trykk for å endre; X tilbakestiller til automatisk.
+            </p>
+            {known.length > 0 ? (
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm divide-y divide-gray-100 dark:divide-gray-700">
+                {known.map((p) => {
+                  const eff = effStaple(p);
+                  const overridden = p.staple_override !== null && p.staple_override !== undefined;
+                  return (
+                    <div key={p.id} className="flex items-center gap-3 px-4 py-3">
+                      <button
+                        onClick={() => setStapleOverride(p, !eff)}
+                        className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors ${eff ? "bg-emerald-600 border-emerald-600 text-white" : "border-gray-300 dark:border-gray-600 text-transparent"}`}
+                        title={eff ? "Fast vare" : "Ikke fast vare"}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="flex-1 text-sm text-gray-900 dark:text-gray-100 truncate">
+                        {p.item_name}
+                        {p.category && <span className="text-xs text-gray-400"> · {p.category}</span>}
+                      </span>
+                      {overridden && (
+                        <button
+                          onClick={() => setStapleOverride(p, null)}
+                          title="Tilbakestill til automatisk"
+                          className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">Ingen varemønstre ennå. Synkroniser kvitteringer eller fullfør noen handleturer.</p>
             )}
           </CollapsibleSection>
         );

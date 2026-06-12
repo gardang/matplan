@@ -22,6 +22,7 @@ id UUID PK · meal_name TEXT (unique index on lower) · rating TEXT (loved/ok/di
 id UUID PK · item_name TEXT · normalized_name TEXT (unique index on lower) · avg_quantity TEXT · times_bought INT · last_bought DATE · category TEXT (auto-learned) · category_override TEXT (user-set, overrides AI) · typical_frequency TEXT (weekly/biweekly/monthly/occasional) · avg_price NUMERIC · last_price NUMERIC · buys_per_month NUMERIC · pattern_source TEXT (app/receipt/both) · updated_at
 category_override: when set, used instead of AI-assigned category. Applied post-processing in regenerate + injected into system prompt.
 avg_price/last_price/buys_per_month: derived from receipt_items by the receipt learning pipeline. pattern_source tracks whether the row is learned from app checkouts, real receipts, or both.
+is_staple BOOL (auto: true = bought regardless of menu) · staple_override BOOL (user-set, wins over is_staple). Effective staple = staple_override ?? is_staple. Only effective-staple items are force-included ("alltid med") in buildSystemPrompt; menu-driven items come from the planned meals. Auto-derived from weekly purchase penetration + category (Kjøtt og fisk / Grønnsaker og frukt are treated as menu-driven).
 
 ## store_connections
 id UUID PK · store TEXT UNIQUE (trumf/coop/rema) · access_token TEXT · token_expires_at TIMESTAMPTZ · last_sync_at TIMESTAMPTZ · sync_started_at TIMESTAMPTZ (set while a sync runs, cleared when done) · status TEXT (connected/expired/error/disconnected/syncing) · status_message TEXT · created_at · updated_at

@@ -102,6 +102,8 @@ export interface ShoppingPattern {
   last_price: number | null;
   buys_per_month: number | null;
   pattern_source: "app" | "receipt" | "both";
+  is_staple: boolean | null;
+  staple_override: boolean | null;
   updated_at: string;
 }
 

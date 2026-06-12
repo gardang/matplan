@@ -77,3 +77,6 @@ them once shipped.
 - Trumf receipt sync (Kiwi/Meny/Spar/Joker), learning pipeline, Innsikt dashboard
   with year selector, persistent sync status, bonus-payout exclusion, structured
   weekly-budget setting. (2026-06-11)
+- Staple vs menu-driven distinction: `is_staple`/`staple_override` on
+  shopping_patterns, auto-classified by weekly penetration + category, only true
+  staples force-included in lists, toggle in Settings → Faste varer. (2026-06-11)

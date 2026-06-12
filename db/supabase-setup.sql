@@ -354,6 +354,8 @@ alter table shopping_patterns add column if not exists last_price numeric(10,2);
 alter table shopping_patterns add column if not exists buys_per_month numeric(6,2);
 alter table shopping_patterns add column if not exists pattern_source text
   default 'app' check (pattern_source in ('app', 'receipt', 'both'));
+alter table shopping_patterns add column if not exists is_staple boolean;
+alter table shopping_patterns add column if not exists staple_override boolean;
 
 
 -- ── Done ─────────────────────────────────────────────────────

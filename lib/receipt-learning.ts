@@ -158,6 +158,22 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
 
   if (!rows || rows.length === 0) return 0;
 
+  // Category per item (from product_mappings) for staple classification.
+  const { data: mappingRows } = await supabase
+    .from("product_mappings")
+    .select("item_name, category");
+  const catMap = new Map<string, string | null>();
+  for (const m of mappingRows ?? []) {
+    catMap.set((m.item_name as string).toLowerCase(), (m.category as string | null) ?? null);
+  }
+  // Categories that are dinner ingredients (menu-driven), never auto-staples.
+  const MENU_DRIVEN = new Set(["Kjøtt og fisk", "Grønnsaker og frukt"]);
+  const weekKey = (d: string) => {
+    const dt = new Date(d + "T12:00:00");
+    dt.setDate(dt.getDate() - ((dt.getDay() + 6) % 7)); // back to Monday
+    return `${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`;
+  };
+
   interface Agg {
     displayName: string;
     dates: string[];
@@ -203,6 +219,10 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
     if (date >= agg.lastDate) agg.lastDate = date;
   }
 
+  // Weeks with any purchase — denominator for per-item penetration.
+  const globalWeeks = new Set<string>();
+  for (const agg of byName.values()) for (const d of agg.dates) globalWeeks.add(weekKey(d));
+
   let updated = 0;
 
   for (const [key, agg] of byName) {
@@ -238,6 +258,12 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
     const avgQuantity =
       avgQtyNum % 1 === 0 ? `${avgQtyNum} ${dominantUnit}` : `${avgQtyNum.toFixed(1)} ${dominantUnit}`;
 
+    // Staple = bought in most weeks AND not a dinner-ingredient category.
+    const itemWeeks = new Set(agg.dates.map(weekKey));
+    const penetration = globalWeeks.size > 0 ? itemWeeks.size / globalWeeks.size : 0;
+    const category = catMap.get(key) ?? null;
+    const isStaple = penetration >= 0.6 && !(category !== null && MENU_DRIVEN.has(category));
+
     const { data: existing } = await supabase
       .from("shopping_patterns")
       .select("id, times_bought, pattern_source, avg_quantity")
@@ -254,6 +280,7 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
           buys_per_month: buysPerMonth,
           avg_price: avgPrice,
           last_price: agg.lastPrice,
+          is_staple: isStaple,
           pattern_source: existing.pattern_source === "app" ? "both" : existing.pattern_source ?? "both",
           updated_at: new Date().toISOString(),
         })
@@ -269,6 +296,8 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
         buys_per_month: buysPerMonth,
         avg_price: avgPrice,
         last_price: agg.lastPrice,
+        is_staple: isStaple,
+        category,
         pattern_source: "receipt",
       });
     }

@@ -160,23 +160,28 @@ export async function buildSystemPrompt(
   // ── Shopping patterns (≥3 purchases) ──────────────────────────────────────
   const { data: patterns } = await supabase
     .from("shopping_patterns")
-    .select("item_name, avg_quantity, typical_frequency, avg_price, buys_per_month, pattern_source")
+    .select("item_name, avg_quantity, typical_frequency, avg_price, buys_per_month, pattern_source, is_staple, staple_override")
     .gte("times_bought", 3);
 
   if (patterns && patterns.length > 0) {
-    const weekly = patterns.filter((p) => p.typical_frequency === "weekly" && p.avg_quantity);
-    const other = patterns.filter((p) => p.typical_frequency !== "weekly" && p.avg_quantity);
+    // A true staple is bought regardless of the menu (user override wins over
+    // the auto-classification). Only these are force-included; everything else
+    // should only appear when a planned meal actually needs it.
+    const isStaple = (p: { is_staple: boolean | null; staple_override: boolean | null }) =>
+      (p.staple_override ?? p.is_staple) === true;
+    const staples = patterns.filter((p) => isStaple(p) && p.avg_quantity);
+    const other = patterns.filter((p) => !isStaple(p) && p.avg_quantity);
 
-    if (weekly.length > 0) {
-      const lines = weekly.map((p) => `- ${p.item_name}: ${p.avg_quantity}`).join("\n");
+    if (staples.length > 0) {
+      const lines = staples.map((p) => `- ${p.item_name}: ${p.avg_quantity}`).join("\n");
       sections.push(
-        `## Faste ukentlige varer — alltid med i handlelisten\nDisse varene kjøpes hver uke og skal ALLTID inkluderes i handlelisten, uansett hvilke middager som er planlagt:\n${lines}`
+        `## Faste varer — alltid med i handlelisten\nDette er faste varer familien kjøper uansett hvilke middager som er planlagt (f.eks. melk, brød, pålegg). De skal ALLTID inkluderes i handlelisten:\n${lines}`
       );
     }
 
     if (other.length > 0) {
       const lines = other.map((p) => `- ${p.item_name}: ${p.avg_quantity}${p.typical_frequency ? ` (${p.typical_frequency})` : ""}`).join("\n");
-      sections.push(`## Typiske handlekvantumet\n${lines}`);
+      sections.push(`## Typiske handlekvantum (kun når en middag krever varen)\nDette er typiske mengder for varer familien kjøper ofte, men som er middagsavhengige. Ta dem KUN med når en planlagt middag faktisk trenger dem — ikke automatisk:\n${lines}`);
     }
 
     // Receipt-learned habits: real frequency and price from synced receipts
