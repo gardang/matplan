@@ -577,6 +577,7 @@ export default function SettingsPage() {
         const known = patterns.filter((p) => (p.times_bought ?? 0) >= 3);
         const effStaple = (p: ShoppingPattern) => (p.staple_override ?? p.is_staple) === true;
         const stapleCount = known.filter(effStaple).length;
+        const categoryNames = categories.filter((c) => c.active).map((c) => c.name);
         return (
           <CollapsibleSection
             icon={<PackageSearch className="w-4 h-4" />}
@@ -600,14 +601,24 @@ export default function SettingsPage() {
                       >
                         <Check className="w-3.5 h-3.5" />
                       </button>
-                      <span className="flex-1 text-sm text-gray-900 dark:text-gray-100 truncate">
-                        {p.item_name}
-                        {p.category && <span className="text-xs text-gray-400"> · {p.category}</span>}
-                      </span>
+                      <span className="flex-1 text-sm text-gray-900 dark:text-gray-100 truncate">{p.item_name}</span>
+                      <select
+                        value={(p.category_override ?? p.category) ?? ""}
+                        onChange={(e) => setPatternOverride(p, e.target.value || null)}
+                        className={`rounded-lg border bg-white dark:bg-gray-700 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 dark:text-gray-100 ${
+                          p.category_override ? "border-emerald-400 dark:border-emerald-500" : "border-gray-200 dark:border-gray-600"
+                        }`}
+                        title={p.category_override ? "Kategori overstyrt" : "Auto-kategori"}
+                      >
+                        <option value="">Annet</option>
+                        {categoryNames.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
                       {overridden && (
                         <button
                           onClick={() => setStapleOverride(p, null)}
-                          title="Tilbakestill til automatisk"
+                          title="Tilbakestill fast vare til automatisk"
                           className="p-1.5 text-gray-400 hover:text-gray-600 transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />

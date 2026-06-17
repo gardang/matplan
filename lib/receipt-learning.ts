@@ -281,6 +281,7 @@ export async function updatePatternsFromReceipts(supabase: SupabaseClient): Prom
           avg_price: avgPrice,
           last_price: agg.lastPrice,
           is_staple: isStaple,
+          ...(category !== null ? { category } : {}),
           pattern_source: existing.pattern_source === "app" ? "both" : existing.pattern_source ?? "both",
           updated_at: new Date().toISOString(),
         })
